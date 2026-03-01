@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cnaft"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d cnaft']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -26,14 +26,14 @@ services:
       JWT_ACCESS_SECRET: change-me
       JWT_REFRESH_SECRET: change-me-too
       AUTH_PROVIDER: local
-      OIDC_ISSUER: ""
-      OIDC_CLIENT_ID: ""
-      OIDC_CLIENT_SECRET: ""
+      OIDC_ISSUER: ''
+      OIDC_CLIENT_ID: ''
+      OIDC_CLIENT_SECRET: ''
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "4000:4000"
+      - '4000:4000'
 
   frontend:
     image: ghcr.io/valcriss/cnaft-frontend:latest
@@ -43,29 +43,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
-
-  full:
-    image: ghcr.io/valcriss/cnaft-full:latest
-    container_name: cnaft-full
-    pull_policy: always
-    restart: unless-stopped
-    profiles: ["full"]
-    environment:
-      PORT: 4000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/cnaft?schema=public
-      JWT_ACCESS_SECRET: change-me
-      JWT_REFRESH_SECRET: change-me-too
-      AUTH_PROVIDER: local
-      OIDC_ISSUER: ""
-      OIDC_CLIENT_ID: ""
-      OIDC_CLIENT_SECRET: ""
-      FRONTEND_DIST_DIR: /app/public
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8080:4000"
+      - '80:80'
 
 volumes:
   postgres_data:
