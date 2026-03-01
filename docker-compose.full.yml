@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cnaft-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cnaft
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cnaft"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  full:
+    image: ghcr.io/valcriss/cnaft-full:latest
+    container_name: cnaft-full
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/cnaft?schema=public
+      JWT_ACCESS_SECRET: change-me
+      JWT_REFRESH_SECRET: change-me-too
+      AUTH_PROVIDER: local
+      OIDC_ISSUER: ""
+      OIDC_CLIENT_ID: ""
+      OIDC_CLIENT_SECRET: ""
+      FRONTEND_DIST_DIR: /app/public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "80:4000"
+
+volumes:
+  postgres_data:
