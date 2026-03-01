@@ -51,6 +51,7 @@ const queryUserAvatar = computed(() => {
 
 const workspaceUsername = computed(() => auth.state.user?.displayName || queryUsername.value || "Utilisateur");
 const workspaceUserAvatar = computed(() => auth.state.user?.avatarUrl || queryUserAvatar.value || "");
+const workspaceUserId = computed(() => auth.state.user?.id || queryUsername.value || "");
 const workspaceUserEmail = computed(() => auth.state.user?.email || "");
 
 function setupCollabFromQuery() {
@@ -475,6 +476,7 @@ function logout() {
       :title="workspaceTitle"
       :username="workspaceUsername"
       :user-avatar="workspaceUserAvatar"
+      :user-id="workspaceUserId"
       timer-sound-mp3="/sound/alarm.mp3"
       timer-sound-ogg="/sound/alarm.ogg"
     />

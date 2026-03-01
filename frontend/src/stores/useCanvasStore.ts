@@ -78,6 +78,7 @@ type LocalIdentity = {
   username: string;
   avatar: string;
   color: string;
+  userKey: string;
 };
 
 type ElementLock = {
@@ -164,6 +165,7 @@ const state = reactive<CanvasState>({
     username: "Utilisateur",
     avatar: "",
     color: "#1d4ed8",
+    userKey: "",
   },
   remotePresences: {},
   elementLocks: {},
@@ -449,6 +451,9 @@ function buildInverseOperation(operation: Operation): Operation | null {
         inversePatch.memberIds = [...element.memberIds];
       }
     }
+    if (element.type === "note" && typeof operation.payload.patch.noteReactions !== "undefined") {
+      inversePatch.noteReactions = { ...element.noteReactions };
+    }
     return makeHistoryOperation("element.patchData", {
       id: element.id,
       patch: inversePatch,
@@ -524,6 +529,16 @@ function normalizeIdentityUsername(username: string) {
 function normalizeIdentityAvatar(avatar?: string) {
   const trimmed = (avatar ?? "").trim();
   return trimmed;
+}
+
+function normalizeIdentityUserKey(userKey?: string) {
+  return (userKey ?? "").trim();
+}
+
+function getReactionActorKey() {
+  const fromIdentity = normalizeIdentityUserKey(state.localIdentity.userKey);
+  if (fromIdentity) return fromIdentity;
+  return state.clientId;
 }
 
 function markPresenceChanged() {
@@ -812,14 +827,16 @@ function getCollabAdapterName() {
   return collabAdapter.name;
 }
 
-function setLocalIdentity(username: string, avatar?: string) {
+function setLocalIdentity(username: string, avatar?: string, userKey?: string) {
   const nextUsername = normalizeIdentityUsername(username);
   const nextAvatar = normalizeIdentityAvatar(avatar);
   const nextColor = hashColorFromClientId(state.clientId);
+  const nextUserKey = normalizeIdentityUserKey(userKey);
   state.localIdentity = {
     username: nextUsername,
     avatar: nextAvatar,
     color: nextColor,
+    userKey: nextUserKey,
   };
   markPresenceChanged();
   if (localPresenceAnnounced) {
@@ -1257,6 +1274,9 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
     ) {
       return false;
     }
+    if (typeof patch.noteReactions !== "undefined" && element.type !== "note") {
+      return false;
+    }
     if (isElementLockedForClient(id, operation.clientId)) return false;
     if (recordHistory) {
       recordSnapshot();
@@ -1277,6 +1297,9 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
       if (Array.isArray(patch.memberIds)) {
         element.memberIds = [...new Set(patch.memberIds)];
       }
+    }
+    if (element.type === "note" && patch.noteReactions && typeof patch.noteReactions === "object") {
+      element.noteReactions = { ...patch.noteReactions };
     }
     if (!recordHistory) {
       markDocumentChanged();
@@ -2275,6 +2298,32 @@ function updateSelectedNoteTextColor(textColor: string) {
     });
   }
   dispatchBatch(operations);
+}
+
+function updateNoteReaction(noteId: string, emoji: string | null) {
+  const note = state.elements.find(
+    (element): element is Extract<CanvasElement, { type: "note" }> => element.id === noteId && element.type === "note",
+  );
+  if (!note || note.locked || isElementLockedForClient(noteId, state.clientId)) return;
+  const actorKey = getReactionActorKey();
+  if (!actorKey) return;
+
+  const nextReactions = { ...note.noteReactions };
+  if (!emoji) {
+    if (typeof nextReactions[actorKey] === "undefined") return;
+    delete nextReactions[actorKey];
+  } else if (nextReactions[actorKey] === emoji) {
+    return;
+  } else {
+    nextReactions[actorKey] = emoji;
+  }
+
+  dispatchOperation({
+    opId: nextOperationId(),
+    clientId: state.clientId,
+    type: "element.patchData",
+    payload: { id: noteId, patch: { noteReactions: nextReactions } },
+  });
 }
 
 function updateSelectedLineStyle(lineStyle: LineStyle) {
@@ -3790,6 +3839,7 @@ export function useCanvasStore() {
     updateSelectedTheme,
     updateSelectedShadowType,
     updateSelectedNoteTextColor,
+    updateNoteReaction,
     updateSelectedLineStyle,
     updateSelectedLineWidth,
     updateSelectedLineRoute,

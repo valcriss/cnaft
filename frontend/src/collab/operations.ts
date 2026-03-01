@@ -145,6 +145,7 @@ export type Operation =
           titleOffsetX?: number;
           titleOffsetY?: number;
           memberIds?: string[];
+          noteReactions?: Record<string, string>;
         };
       };
     })
@@ -338,6 +339,13 @@ function isCanvasElementLike(value: unknown) {
     if (!isFiniteNumber(value.lineHeight) || !isFiniteNumber(value.letterSpacing)) return false;
     if (typeof value.textTransform !== "string" || !TEXT_TRANSFORMS.has(value.textTransform)) return false;
     if (value.type === "note") {
+      if (
+        typeof value.noteReactions !== "undefined" &&
+        (!isObjectRecord(value.noteReactions) ||
+          Object.values(value.noteReactions).some((emoji) => typeof emoji !== "string"))
+      ) {
+        return false;
+      }
       return typeof value.textColor === "undefined" || typeof value.textColor === "string";
     }
     if (value.type === "envelope") {
@@ -448,12 +456,20 @@ export function isValidOperation(operation: unknown): operation is Operation {
     case "element.patchData":
       if (!hasOnlyKeys(payload, ["id", "patch"])) return false;
       if (typeof payload.id !== "string" || !isObjectRecord(payload.patch)) return false;
-      if (!hasOnlyKeys(payload.patch, ["locked", "envelopeType", "titleOffsetX", "titleOffsetY", "memberIds"])) return false;
+      if (!hasOnlyKeys(payload.patch, ["locked", "envelopeType", "titleOffsetX", "titleOffsetY", "memberIds", "noteReactions"])) return false;
       if (typeof payload.patch.locked !== "undefined" && typeof payload.patch.locked !== "boolean") return false;
       if (typeof payload.patch.envelopeType !== "undefined" && (typeof payload.patch.envelopeType !== "string" || !ENVELOPE_TYPES.has(payload.patch.envelopeType))) return false;
       if (typeof payload.patch.titleOffsetX !== "undefined" && !isFiniteNumber(payload.patch.titleOffsetX)) return false;
       if (typeof payload.patch.titleOffsetY !== "undefined" && !isFiniteNumber(payload.patch.titleOffsetY)) return false;
-      return typeof payload.patch.memberIds === "undefined" || isStringArray(payload.patch.memberIds);
+      if (typeof payload.patch.memberIds !== "undefined" && !isStringArray(payload.patch.memberIds)) return false;
+      if (
+        typeof payload.patch.noteReactions !== "undefined" &&
+        (!isObjectRecord(payload.patch.noteReactions) ||
+          Object.values(payload.patch.noteReactions).some((emoji) => typeof emoji !== "string"))
+      ) {
+        return false;
+      }
+      return true;
     case "line.patchStyle":
       if (!hasOnlyKeys(payload, ["id", "patch"])) return false;
       if (typeof payload.id !== "string" || !isObjectRecord(payload.patch)) return false;

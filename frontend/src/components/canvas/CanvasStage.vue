@@ -95,6 +95,23 @@ const THEMES = [
 ] as const;
 const MAX_IMAGE_WIDTH = 360;
 const MAX_IMAGE_HEIGHT = 260;
+const NOTE_REACTION_EMOJIS = [
+  "👍",
+  "❤️",
+  "👏",
+  "🎉",
+  "🔥",
+  "💡",
+  "✅",
+  "❓",
+  "🚀",
+  "👀",
+  "😄",
+  "🤔",
+  "🙌",
+  "💯",
+  "⚡",
+] as const;
 const imageCache = new Map<string, HTMLImageElement>();
 
 let resizeObserver: ResizeObserver | null = null;
@@ -108,80 +125,83 @@ let lastPresenceCursorSentAt = 0;
 let lastPresenceCursorX = Number.NaN;
 let lastPresenceCursorY = Number.NaN;
 let lastLockWarningAt = 0;
+let ignoreNextWindowPointerDownForReactionMenu = false;
 
 let draggingSelection:
   | {
-      ids: string[];
-      primaryIds: string[];
-      startPointerX: number;
-      startPointerY: number;
-      startPositions: Record<string, { x: number; y: number }>;
-      startRects: Record<string, Rect>;
-    }
+    ids: string[];
+    primaryIds: string[];
+    startPointerX: number;
+    startPointerY: number;
+    startPositions: Record<string, { x: number; y: number }>;
+    startRects: Record<string, Rect>;
+  }
   | null = null;
 
 let resizingSelection:
   | {
-      ids: string[];
-      handle: ResizeHandle;
-      startPointerX: number;
-      startPointerY: number;
-      startBounds: Rect;
-      startRects: Record<string, Rect>;
-      startFontSizes: Record<string, number>;
-      startTypes: Record<string, CanvasElement["type"]>;
-      startTexts: Record<string, string>;
-    }
+    ids: string[];
+    handle: ResizeHandle;
+    startPointerX: number;
+    startPointerY: number;
+    startBounds: Rect;
+    startRects: Record<string, Rect>;
+    startFontSizes: Record<string, number>;
+    startTypes: Record<string, CanvasElement["type"]>;
+    startTexts: Record<string, string>;
+  }
   | null = null;
 
 let marqueeSelection:
   | {
-      startX: number;
-      startY: number;
-      currentX: number;
-      currentY: number;
-      additive: boolean;
-      baseIds: string[];
-    }
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    additive: boolean;
+    baseIds: string[];
+  }
   | null = null;
 
 let lineDrawing:
   | {
-      id: string;
-      startAnchor: { elementId: string; position: AnchorPosition } | null;
-      endAnchor: { elementId: string; position: AnchorPosition } | null;
-    }
+    id: string;
+    startAnchor: { elementId: string; position: AnchorPosition } | null;
+    endAnchor: { elementId: string; position: AnchorPosition } | null;
+  }
   | null = null;
 
 let lineEndpointDrag:
   | {
-      id: string;
-      endpoint: "start" | "end";
-    }
+    id: string;
+    endpoint: "start" | "end";
+  }
   | null = null;
 
 let envelopeTitleDrag:
   | {
-      id: string;
-      startPointerX: number;
-      startPointerY: number;
-      startOffsetX: number;
-      startOffsetY: number;
-    }
+    id: string;
+    startPointerX: number;
+    startPointerY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+  }
   | null = null;
 
 let envelopeDrawing:
   | {
-      startX: number;
-      startY: number;
-      currentX: number;
-      currentY: number;
-    }
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  }
   | null = null;
 
 const hoveredElementId = ref<string | null>(null);
 const hoveredLineAnchor = ref<{ elementId: string; position: AnchorPosition } | null>(null);
 const alignmentGuides = ref<Array<{ x1: number; y1: number; x2: number; y2: number }>>([]);
+const noteReactionMenuRef = ref<HTMLElement | null>(null);
+const noteReactionMenu = ref<{ noteId: string; x: number; y: number } | null>(null);
 
 const textEditor = ref<{
   id: string;
@@ -243,8 +263,8 @@ const followedUser = computed(() => {
 const followCanvasStyle = computed(() =>
   followedUser.value
     ? ({
-        "--follow-color": followedUser.value.color,
-      } as Record<string, string>)
+      "--follow-color": followedUser.value.color,
+    } as Record<string, string>)
     : {},
 );
 const timerLabel = computed(() => {
@@ -746,6 +766,12 @@ function getEnvelopeMembers(envelope: Extract<CanvasElement, { type: "envelope" 
     .filter((element): element is CanvasElement => !!element && element.type !== "envelope");
 }
 
+function getEnvelopePadding(envelopeType: EnvelopeType) {
+  if (envelopeType === "rounded") return 40;
+  if (envelopeType === "convex") return 24;
+  return 22;
+}
+
 function getEnvelopeBounds(envelope: Extract<CanvasElement, { type: "envelope" }>): Rect {
   const members = getEnvelopeMembers(envelope);
   if (members.length === 0) {
@@ -772,7 +798,7 @@ function getEnvelopeBounds(envelope: Extract<CanvasElement, { type: "envelope" }
     maxY = Math.max(maxY, rect.y + rect.height);
   }
 
-  const padding = 22;
+  const padding = getEnvelopePadding(envelope.envelopeType);
   return {
     x: minX - padding,
     y: minY - padding,
@@ -827,6 +853,87 @@ function getEnvelopeMembershipCount(elementId: string) {
   return count;
 }
 
+function getLocalReactionActorKey() {
+  const key = (canvasStore.state.localIdentity.userKey || "").trim();
+  return key || canvasStore.state.clientId;
+}
+
+function parseHexColor(color: string) {
+  const value = color.trim();
+  if (!value.startsWith("#")) return null;
+  if (value.length === 4) {
+    const rHex = value.charAt(1);
+    const gHex = value.charAt(2);
+    const bHex = value.charAt(3);
+    const r = Number.parseInt(`${rHex}${rHex}`, 16);
+    const g = Number.parseInt(`${gHex}${gHex}`, 16);
+    const b = Number.parseInt(`${bHex}${bHex}`, 16);
+    if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+    return { r, g, b };
+  }
+  if (value.length === 7) {
+    const r = Number.parseInt(value.slice(1, 3), 16);
+    const g = Number.parseInt(value.slice(3, 5), 16);
+    const b = Number.parseInt(value.slice(5, 7), 16);
+    if ([r, g, b].some((c) => Number.isNaN(c))) return null;
+    return { r, g, b };
+  }
+  return null;
+}
+
+function darkenHexColor(color: string, factor: number) {
+  const parsed = parseHexColor(color);
+  if (!parsed) return "#334155";
+  const r = Math.max(0, Math.min(255, Math.round(parsed.r * factor)));
+  const g = Math.max(0, Math.min(255, Math.round(parsed.g * factor)));
+  const b = Math.max(0, Math.min(255, Math.round(parsed.b * factor)));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function getNoteReactionAccent(note: Extract<CanvasElement, { type: "note" }>) {
+  const base = note.fill !== "transparent" ? note.fill : note.stroke !== "transparent" ? note.stroke : "#cbd5e1";
+  return darkenHexColor(base, 0.72);
+}
+
+function getNoteReactionSummary(note: Extract<CanvasElement, { type: "note" }>) {
+  const counts = new Map<string, number>();
+  const reactions = note.noteReactions ?? {};
+  for (const emoji of Object.values(reactions)) {
+    if (!emoji) continue;
+    counts.set(emoji, (counts.get(emoji) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).map(([emoji, count]) => ({ emoji, count }));
+}
+
+function getNoteReactionButtonRect(note: Extract<CanvasElement, { type: "note" }>) {
+  const rect = getElementRect(note);
+  const size = 12;
+  const inset = 10;
+  return {
+    x: rect.x + rect.width - size - inset,
+    y: rect.y + rect.height - size - inset,
+    width: size,
+    height: size,
+  };
+}
+
+function getNoteReactionButtonAt(worldX: number, worldY: number) {
+  for (let i = canvasStore.state.elements.length - 1; i >= 0; i -= 1) {
+    const element = canvasStore.state.elements[i];
+    if (!element || element.type !== "note") continue;
+    const rect = getNoteReactionButtonRect(element);
+    if (
+      worldX >= rect.x &&
+      worldX <= rect.x + rect.width &&
+      worldY >= rect.y &&
+      worldY <= rect.y + rect.height
+    ) {
+      return element;
+    }
+  }
+  return null;
+}
+
 type Point = { x: number; y: number };
 
 function crossProduct(o: Point, a: Point, b: Point) {
@@ -861,11 +968,12 @@ function getEnvelopePolygon(envelope: Extract<CanvasElement, { type: "envelope" 
   const members = getEnvelopeMembers(envelope);
   if (members.length === 0) return [];
 
+  const shellPadding = getEnvelopePadding(envelope.envelopeType);
   const points: Point[] = [];
   for (const member of members) {
     const rect = getBaseElementRect(member);
-    const px = 18;
-    const py = 18;
+    const px = shellPadding;
+    const py = shellPadding;
     points.push(
       { x: rect.x - px, y: rect.y - py },
       { x: rect.x + rect.width + px, y: rect.y - py },
@@ -1016,12 +1124,12 @@ function getClosestAnchor(worldX: number, worldY: number) {
   const snapRadius = 14 / canvasStore.state.viewport.zoom;
   let closest:
     | {
-        elementId: string;
-        position: AnchorPosition;
-        x: number;
-        y: number;
-        distance: number;
-      }
+      elementId: string;
+      position: AnchorPosition;
+      x: number;
+      y: number;
+      distance: number;
+    }
     | null = null;
 
   for (const element of getAnchorableElements()) {
@@ -1167,6 +1275,14 @@ function screenToWorld(screenX: number, screenY: number) {
   return {
     x: (screenX - x) / zoom,
     y: (screenY - y) / zoom,
+  };
+}
+
+function worldToScreen(worldX: number, worldY: number) {
+  const { x, y, zoom } = canvasStore.state.viewport;
+  return {
+    x: worldX * zoom + x,
+    y: worldY * zoom + y,
   };
 }
 
@@ -1628,6 +1744,72 @@ function drawElementLocks(ctx: CanvasRenderingContext2D) {
   }
 }
 
+function drawNoteReactions(ctx: CanvasRenderingContext2D) {
+  const localActorKey = getLocalReactionActorKey();
+  for (const element of canvasStore.state.elements) {
+    if (element.type !== "note") continue;
+
+    const button = getNoteReactionButtonRect(element);
+    const accent = getNoteReactionAccent(element);
+    const emojiSize = 28;
+    const emojiGap = 4;
+
+    const summary = getNoteReactionSummary(element);
+    let emojiX = button.x - emojiGap - emojiSize;
+    const emojiY = button.y + (button.height - emojiSize) / 2;
+    for (const item of summary) {
+      ctx.save();
+      const reactions = element.noteReactions ?? {};
+      const isMine = reactions[localActorKey] === item.emoji;
+
+      ctx.font = `24px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = isMine ? accent : "#0f172a";
+      ctx.fillText(item.emoji, emojiX + emojiSize / 2, emojiY + emojiSize / 2 + 0.2);
+
+      if (item.count > 1) {
+        const badgeR = 6;
+        const badgeX = emojiX + emojiSize - 1;
+        const badgeY = emojiY + emojiSize - 1;
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `8px system-ui`;
+        ctx.fillText(String(item.count), badgeX, badgeY + 0.2);
+      }
+      ctx.restore();
+
+      emojiX -= emojiSize + emojiGap;
+    }
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    drawRoundedRect(ctx, button.x, button.y, button.width, button.height, 4);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
+    ctx.lineWidth = 0.8;
+    drawRoundedRect(ctx, button.x, button.y, button.width, button.height, 4);
+    ctx.stroke();
+
+    const cx = button.x + button.width / 2;
+    const cy = button.y + button.height / 2;
+    const arm = 2.3;
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - arm, cy);
+    ctx.lineTo(cx + arm, cy);
+    ctx.moveTo(cx, cy - arm);
+    ctx.lineTo(cx, cy + arm);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function render() {
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -1718,6 +1900,8 @@ function render() {
       getLinePathPoints,
     });
   }
+
+  drawNoteReactions(ctx);
 
   const hasEditableLineSelection = selectedElements.value.some(
     (element) => element.type === "line" && !element.locked,
@@ -1866,6 +2050,40 @@ function onEditorInput() {
 
 function closeContextMenu() {
   contextMenu.value.visible = false;
+}
+
+function closeNoteReactionMenu() {
+  noteReactionMenu.value = null;
+}
+
+function openNoteReactionMenu(note: Extract<CanvasElement, { type: "note" }>) {
+  const buttonRect = getNoteReactionButtonRect(note);
+  const buttonScreen = worldToScreen(buttonRect.x, buttonRect.y);
+  ignoreNextWindowPointerDownForReactionMenu = true;
+  noteReactionMenu.value = {
+    noteId: note.id,
+    x: buttonScreen.x + buttonRect.width * canvasStore.state.viewport.zoom + 8,
+    y: buttonScreen.y - 8,
+  };
+}
+
+function applyNoteReaction(emoji: string) {
+  const menu = noteReactionMenu.value;
+  if (!menu) return;
+  canvasStore.updateNoteReaction(menu.noteId, emoji);
+  closeNoteReactionMenu();
+}
+
+function isNoteReactionEmojiActive(emoji: string) {
+  const menu = noteReactionMenu.value;
+  if (!menu) return false;
+  const note = canvasStore.state.elements.find(
+    (element): element is Extract<CanvasElement, { type: "note" }> =>
+      element.id === menu.noteId && element.type === "note",
+  );
+  if (!note) return false;
+  const actorKey = getLocalReactionActorKey();
+  return (note.noteReactions ?? {})[actorKey] === emoji;
 }
 
 function openContextMenu(
@@ -2437,6 +2655,7 @@ async function onPointerDown(event: PointerEvent) {
   setHoveredElement(null);
   setHoveredLineAnchor(null);
   closeContextMenu();
+  closeNoteReactionMenu();
 
   if (textEditor.value) {
     closeTextEditor(true);
@@ -2451,6 +2670,23 @@ async function onPointerDown(event: PointerEvent) {
   }
   if (canvasStore.state.tool !== "line" && !lineDrawing && !lineEndpointDrag) {
     setHoveredLineAnchor(null);
+  }
+
+  if (canvasStore.state.tool === "select" && event.button === 0) {
+    const reactionButtonHit = getNoteReactionButtonAt(world.x, world.y);
+    if (reactionButtonHit) {
+      if (!canvasStore.isSelected(reactionButtonHit.id)) {
+        canvasStore.setSelected(reactionButtonHit.id);
+      }
+      if (reactionButtonHit.locked || isLockedByRemote(reactionButtonHit.id)) {
+        if (isLockedByRemote(reactionButtonHit.id)) {
+          notifyLockedByRemote(reactionButtonHit.id);
+        }
+        return;
+      }
+      openNoteReactionMenu(reactionButtonHit);
+      return;
+    }
   }
 
   if (canvasStore.state.tool === "image") {
@@ -2606,9 +2842,9 @@ async function onPointerDown(event: PointerEvent) {
     const ids =
       canvasStore.state.selectedIds.length > 0
         ? canvasStore.state.selectedIds.filter((id) => {
-            const element = canvasStore.state.elements.find((item) => item.id === id);
-            return !!element && !element.locked;
-          })
+          const element = canvasStore.state.elements.find((item) => item.id === id);
+          return !!element && !element.locked;
+        })
         : [hit.id];
     if (ids.length === 0) return;
     startDraggingSelection(ids, world.x, world.y);
@@ -2959,6 +3195,14 @@ function onPointerMove(event: PointerEvent) {
     }
   }
 
+  if (canvasStore.state.tool === "select") {
+    const reactionButtonHit = getNoteReactionButtonAt(world.x, world.y);
+    if (reactionButtonHit) {
+      updateCanvasCursor("pointer");
+      return;
+    }
+  }
+
   if (spacePressed) {
     updateCanvasCursor("grab");
     return;
@@ -3097,6 +3341,7 @@ function onPointerUp(event: PointerEvent) {
 
 function onContextMenu(event: MouseEvent) {
   event.preventDefault();
+  closeNoteReactionMenu();
 
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -3181,6 +3426,7 @@ function onDoubleClick(event: MouseEvent) {
 function onWheel(event: WheelEvent) {
   event.preventDefault();
   closeContextMenu();
+  closeNoteReactionMenu();
 
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -3208,6 +3454,7 @@ function onKeyDown(event: KeyboardEvent) {
 
   if (event.key === "Escape") {
     closeContextMenu();
+    closeNoteReactionMenu();
   }
 
   if (event.code === "Space") {
@@ -3296,10 +3543,19 @@ function onPointerLeave() {
 }
 
 function onWindowPointerDown(event: PointerEvent) {
-  if (!contextMenu.value.visible) return;
+  if (ignoreNextWindowPointerDownForReactionMenu) {
+    ignoreNextWindowPointerDownForReactionMenu = false;
+    return;
+  }
   const target = event.target as Node | null;
-  if (menuRef.value && target && menuRef.value.contains(target)) return;
-  closeContextMenu();
+  if (contextMenu.value.visible) {
+    if (menuRef.value && target && menuRef.value.contains(target)) return;
+    closeContextMenu();
+  }
+  if (noteReactionMenu.value) {
+    if (noteReactionMenuRef.value && target && noteReactionMenuRef.value.contains(target)) return;
+    closeNoteReactionMenu();
+  }
 }
 
 function onEditorKeyDown(event: KeyboardEvent) {
@@ -3526,12 +3782,8 @@ watch(
 </script>
 
 <template>
-  <section
-    class="canvas-shell"
-    :class="{ following: Boolean(followedUser) }"
-    :style="followCanvasStyle"
-    aria-label="Drawing stage"
-  >
+  <section class="canvas-shell" :class="{ following: Boolean(followedUser) }" :style="followCanvasStyle"
+    aria-label="Drawing stage">
     <canvas ref="canvasRef"></canvas>
     <div v-if="followedUser" class="follow-indicator" :style="{ backgroundColor: followedUser.color }">
       Vous suivez actuellement {{ followedUser.username }}
@@ -3544,15 +3796,28 @@ watch(
       <div class="vote-panel-count">{{ canvasStore.state.voteRemaining }}</div>
       <button type="button" class="vote-panel-btn" @click="closeVoteFromCanvas">Cloturer le vote</button>
     </div>
-    <div
-      v-for="item in voteControlItems"
-      :key="`vote-control-${item.id}`"
-      class="vote-controls"
-      :style="{ left: `${item.left}px`, top: `${item.top}px` }"
-    >
+    <div v-for="item in voteControlItems" :key="`vote-control-${item.id}`" class="vote-controls"
+      :style="{ left: `${item.left}px`, top: `${item.top}px` }">
       <button type="button" :disabled="!item.canIncrement" @click="incrementVoteForElement(item.id)">+</button>
       <span>{{ item.votes }}</span>
       <button type="button" :disabled="!item.canDecrement" @click="decrementVoteForElement(item.id)">-</button>
+    </div>
+    <div
+      v-if="noteReactionMenu"
+      ref="noteReactionMenuRef"
+      class="note-reaction-menu"
+      :style="{ left: `${noteReactionMenu.x}px`, top: `${noteReactionMenu.y}px` }"
+    >
+      <button
+        v-for="emoji in NOTE_REACTION_EMOJIS"
+        :key="`reaction-emoji-${emoji}`"
+        type="button"
+        class="note-reaction-emoji"
+        :class="{ active: isNoteReactionEmojiActive(emoji) }"
+        @click="applyNoteReaction(emoji)"
+      >
+        {{ emoji }}
+      </button>
     </div>
     <div v-if="canvasStore.state.voteResultsVisible" class="vote-results-modal">
       <div class="vote-results-card">
@@ -3562,16 +3827,12 @@ watch(
         <div class="vote-results-grid">
           <div v-for="row in voteResultRows" :key="`vote-row-${row.id}`" class="vote-results-row">
             <div class="vote-results-item">
-              <canvas
-                class="vote-result-preview"
-                :ref="
-                  (el) =>
-                    setVoteResultCanvasRef(
-                      row.id,
-                      (el as HTMLCanvasElement | null) ?? null,
-                    )
-                "
-              ></canvas>
+              <canvas class="vote-result-preview" :ref="(el) =>
+                  setVoteResultCanvasRef(
+                    row.id,
+                    (el as HTMLCanvasElement | null) ?? null,
+                  )
+                "></canvas>
               <span>{{ row.label }}</span>
             </div>
             <div class="vote-results-score">{{ row.votes }}</div>
@@ -3582,36 +3843,18 @@ watch(
         </div>
       </div>
     </div>
-    <textarea
-      v-if="textEditor"
-      ref="editorRef"
-      v-model="textEditor.text"
-      class="text-editor"
-      :class="{ 'note-editor': textEditor.type === 'note' }"
-      :style="textEditorStyle"
-      @input="onEditorInput"
-      @blur="closeTextEditor(true)"
-      @keydown="onEditorKeyDown"
-    />
-    <div
-      v-if="contextMenu.visible"
-      ref="menuRef"
-      class="context-menu"
-      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
-    >
+    <textarea v-if="textEditor" ref="editorRef" v-model="textEditor.text" class="text-editor"
+      :class="{ 'note-editor': textEditor.type === 'note' }" :style="textEditorStyle" @input="onEditorInput"
+      @blur="closeTextEditor(true)" @keydown="onEditorKeyDown" />
+    <div v-if="contextMenu.visible" ref="menuRef" class="context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
       <template v-if="contextMenu.target === 'element'">
         <div v-if="contextElementCapabilities?.supportsTheme && !isLockedContext" class="menu-section">
           <span class="menu-label">Thème</span>
           <div class="swatches">
-            <button
-              v-for="theme in THEMES"
-              :key="`theme-${theme.name}`"
-              type="button"
-              class="swatch"
-              :title="theme.name"
-              :style="{ backgroundColor: theme.fill, borderColor: theme.stroke }"
-              @click="applyTheme(theme.fill, theme.stroke)"
-            ></button>
+            <button v-for="theme in THEMES" :key="`theme-${theme.name}`" type="button" class="swatch"
+              :title="theme.name" :style="{ backgroundColor: theme.fill, borderColor: theme.stroke }"
+              @click="applyTheme(theme.fill, theme.stroke)"></button>
           </div>
         </div>
         <div v-if="contextElementCapabilities?.supportsFill" class="menu-section">
@@ -3627,20 +3870,10 @@ watch(
             </button>
             <div class="submenu">
               <div class="swatches">
-                <button
-                  type="button"
-                  class="swatch swatch-transparent"
-                  title="Transparent"
-                  @click="applyFillColor(TRANSPARENT_COLOR)"
-                ></button>
-                <button
-                  v-for="color in SWATCHES"
-                  :key="`fill-${color}`"
-                  type="button"
-                  class="swatch"
-                  :style="{ backgroundColor: color }"
-                  @click="applyFillColor(color)"
-                ></button>
+                <button type="button" class="swatch swatch-transparent" title="Transparent"
+                  @click="applyFillColor(TRANSPARENT_COLOR)"></button>
+                <button v-for="color in SWATCHES" :key="`fill-${color}`" type="button" class="swatch"
+                  :style="{ backgroundColor: color }" @click="applyFillColor(color)"></button>
                 <label class="swatch picker">
                   <input type="color" @change="onFillPickerInput" />
                 </label>
@@ -3683,33 +3916,21 @@ watch(
                   </button>
                   <div class="submenu">
                     <div class="submenu-actions">
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineRoute === 'straight' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineRoute('straight')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineRoute === 'straight' }" :disabled="isLockedContext"
+                        @click="applyLineRoute('straight')">
                         Ligne droite
                         <span v-if="selectedLineStyle?.lineRoute === 'straight'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineRoute === 'orthogonal' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineRoute('orthogonal')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineRoute === 'orthogonal' }" :disabled="isLockedContext"
+                        @click="applyLineRoute('orthogonal')">
                         Ligne a angle droit
                         <span v-if="selectedLineStyle?.lineRoute === 'orthogonal'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineRoute === 'curve' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineRoute('curve')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineRoute === 'curve' }" :disabled="isLockedContext"
+                        @click="applyLineRoute('curve')">
                         Ligne courbe
                         <span v-if="selectedLineStyle?.lineRoute === 'curve'" class="menu-item-check">✓</span>
                       </button>
@@ -3725,35 +3946,23 @@ watch(
                   </button>
                   <div class="submenu">
                     <div class="submenu-actions">
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineStyle === 'solid' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineStyle('solid')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineStyle === 'solid' }" :disabled="isLockedContext"
+                        @click="applyLineStyle('solid')">
                         <span class="menu-item-leading"><font-awesome-icon icon="minus" /></span>
                         Ligne pleine
                         <span v-if="selectedLineStyle?.lineStyle === 'solid'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineStyle === 'dotted' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineStyle('dotted')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineStyle === 'dotted' }" :disabled="isLockedContext"
+                        @click="applyLineStyle('dotted')">
                         <span class="menu-item-leading"><font-awesome-icon icon="ellipsis" /></span>
                         Pointillé
                         <span v-if="selectedLineStyle?.lineStyle === 'dotted'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineStyle === 'dashed' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineStyle('dashed')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineStyle === 'dashed' }" :disabled="isLockedContext"
+                        @click="applyLineStyle('dashed')">
                         <span class="menu-item-leading"><font-awesome-icon icon="grip-lines" /></span>
                         Tiret
                         <span v-if="selectedLineStyle?.lineStyle === 'dashed'" class="menu-item-check">✓</span>
@@ -3770,91 +3979,57 @@ watch(
                   </button>
                   <div class="submenu">
                     <div class="submenu-actions">
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineArrow === 'start' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrow('start')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineArrow === 'start' }" :disabled="isLockedContext"
+                        @click="applyLineArrow('start')">
                         <span class="menu-item-leading"><font-awesome-icon icon="arrow-left" /></span>
                         Flèche au début
                         <span v-if="selectedLineStyle?.lineArrow === 'start'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineArrow === 'end' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrow('end')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineArrow === 'end' }" :disabled="isLockedContext"
+                        @click="applyLineArrow('end')">
                         <span class="menu-item-leading"><font-awesome-icon icon="arrow-right" /></span>
                         Flèche a la fin
                         <span v-if="selectedLineStyle?.lineArrow === 'end'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineArrow === 'both' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrow('both')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineArrow === 'both' }" :disabled="isLockedContext"
+                        @click="applyLineArrow('both')">
                         <span class="menu-item-leading"><font-awesome-icon icon="arrows-left-right" /></span>
                         Flèche aux deux extrémités
                         <span v-if="selectedLineStyle?.lineArrow === 'both'" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.lineArrow === 'none' }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrow('none')"
-                      >
+                      <button type="button" class="menu-item"
+                        :class="{ active: selectedLineStyle?.lineArrow === 'none' }" :disabled="isLockedContext"
+                        @click="applyLineArrow('none')">
                         Retirer les flèches
                         <span v-if="selectedLineStyle?.lineArrow === 'none'" class="menu-item-check">✓</span>
                       </button>
                       <div class="submenu-separator"></div>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{
-                          active:
-                            selectedLineStyle?.lineArrow !== 'none' &&
-                            selectedLineStyle?.lineArrowStyle === 'filled',
-                        }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrowStyle('filled')"
-                      >
+                      <button type="button" class="menu-item" :class="{
+                        active:
+                          selectedLineStyle?.lineArrow !== 'none' &&
+                          selectedLineStyle?.lineArrowStyle === 'filled',
+                      }" :disabled="isLockedContext" @click="applyLineArrowStyle('filled')">
                         Flèche pleine
-                        <span
-                          v-if="
-                            selectedLineStyle?.lineArrow !== 'none' &&
-                            selectedLineStyle?.lineArrowStyle === 'filled'
-                          "
-                          class="menu-item-check"
-                        >
+                        <span v-if="
+                          selectedLineStyle?.lineArrow !== 'none' &&
+                          selectedLineStyle?.lineArrowStyle === 'filled'
+                        " class="menu-item-check">
                           ✓
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{
-                          active:
-                            selectedLineStyle?.lineArrow !== 'none' &&
-                            selectedLineStyle?.lineArrowStyle === 'open',
-                        }"
-                        :disabled="isLockedContext"
-                        @click="applyLineArrowStyle('open')"
-                      >
+                      <button type="button" class="menu-item" :class="{
+                        active:
+                          selectedLineStyle?.lineArrow !== 'none' &&
+                          selectedLineStyle?.lineArrowStyle === 'open',
+                      }" :disabled="isLockedContext" @click="applyLineArrowStyle('open')">
                         Flèche ouverte
-                        <span
-                          v-if="
-                            selectedLineStyle?.lineArrow !== 'none' &&
-                            selectedLineStyle?.lineArrowStyle === 'open'
-                          "
-                          class="menu-item-check"
-                        >
+                        <span v-if="
+                          selectedLineStyle?.lineArrow !== 'none' &&
+                          selectedLineStyle?.lineArrowStyle === 'open'
+                        " class="menu-item-check">
                           ✓
                         </span>
                       </button>
@@ -3870,46 +4045,26 @@ watch(
                   </button>
                   <div class="submenu">
                     <div class="submenu-actions">
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.strokeWidth === 1 }"
-                        :disabled="isLockedContext"
-                        @click="applyLineWidth(1)"
-                      >
+                      <button type="button" class="menu-item" :class="{ active: selectedLineStyle?.strokeWidth === 1 }"
+                        :disabled="isLockedContext" @click="applyLineWidth(1)">
                         <span class="menu-item-leading"><font-awesome-icon icon="minus" /></span>
                         Épaisseur 1
                         <span v-if="selectedLineStyle?.strokeWidth === 1" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.strokeWidth === 2 }"
-                        :disabled="isLockedContext"
-                        @click="applyLineWidth(2)"
-                      >
+                      <button type="button" class="menu-item" :class="{ active: selectedLineStyle?.strokeWidth === 2 }"
+                        :disabled="isLockedContext" @click="applyLineWidth(2)">
                         <span class="menu-item-leading"><font-awesome-icon icon="minus" /></span>
                         Épaisseur 2
                         <span v-if="selectedLineStyle?.strokeWidth === 2" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.strokeWidth === 4 }"
-                        :disabled="isLockedContext"
-                        @click="applyLineWidth(4)"
-                      >
+                      <button type="button" class="menu-item" :class="{ active: selectedLineStyle?.strokeWidth === 4 }"
+                        :disabled="isLockedContext" @click="applyLineWidth(4)">
                         <span class="menu-item-leading"><font-awesome-icon icon="minus" /></span>
                         Épaisseur 4
                         <span v-if="selectedLineStyle?.strokeWidth === 4" class="menu-item-check">✓</span>
                       </button>
-                      <button
-                        type="button"
-                        class="menu-item"
-                        :class="{ active: selectedLineStyle?.strokeWidth === 8 }"
-                        :disabled="isLockedContext"
-                        @click="applyLineWidth(8)"
-                      >
+                      <button type="button" class="menu-item" :class="{ active: selectedLineStyle?.strokeWidth === 8 }"
+                        :disabled="isLockedContext" @click="applyLineWidth(8)">
                         <span class="menu-item-leading"><font-awesome-icon icon="minus" /></span>
                         Épaisseur 8
                         <span v-if="selectedLineStyle?.strokeWidth === 8" class="menu-item-check">✓</span>
@@ -3928,18 +4083,15 @@ watch(
                     <div class="line-label-panel">
                       <label class="text-type-field">
                         <span>Libellé du connecteur</span>
-                        <input
-                          type="text"
-                          :disabled="isLockedContext"
-                          :value="selectedLineStyle?.label"
-                          placeholder="Ex: API -> Service"
-                          @input="applyLineLabelFromInput"
-                        />
+                        <input type="text" :disabled="isLockedContext" :value="selectedLineStyle?.label"
+                          placeholder="Ex: API -> Service" @input="applyLineLabelFromInput" />
                       </label>
                       <label class="text-type-field">
                         <span>Taille du libellé</span>
-                        <select :disabled="isLockedContext" :value="selectedLineStyle?.labelSize" @change="applyLineLabelSize">
-                          <option v-for="size in LINE_LABEL_SIZE_OPTIONS" :key="`line-label-size-${size}`" :value="size">
+                        <select :disabled="isLockedContext" :value="selectedLineStyle?.labelSize"
+                          @change="applyLineLabelSize">
+                          <option v-for="size in LINE_LABEL_SIZE_OPTIONS" :key="`line-label-size-${size}`"
+                            :value="size">
                             {{ size }} px
                           </option>
                         </select>
@@ -3947,14 +4099,9 @@ watch(
                       <div class="line-label-colors">
                         <span>Texte</span>
                         <div class="swatches">
-                          <button
-                            v-for="color in SWATCHES"
-                            :key="`line-label-color-${color}`"
-                            type="button"
-                            class="swatch"
-                            :style="{ backgroundColor: color }"
-                            @click="applyLineLabelColor(color)"
-                          ></button>
+                          <button v-for="color in SWATCHES" :key="`line-label-color-${color}`" type="button"
+                            class="swatch" :style="{ backgroundColor: color }"
+                            @click="applyLineLabelColor(color)"></button>
                           <label class="swatch picker">
                             <input type="color" @change="onLineLabelColorPickerInput" />
                           </label>
@@ -3963,20 +4110,10 @@ watch(
                       <div class="line-label-colors">
                         <span>Fond du libellé</span>
                         <div class="swatches">
-                          <button
-                            type="button"
-                            class="swatch swatch-transparent"
-                            title="Transparent"
-                            @click="applyLineLabelBg(TRANSPARENT_COLOR)"
-                          ></button>
-                          <button
-                            v-for="color in SWATCHES"
-                            :key="`line-label-bg-${color}`"
-                            type="button"
-                            class="swatch"
-                            :style="{ backgroundColor: color }"
-                            @click="applyLineLabelBg(color)"
-                          ></button>
+                          <button type="button" class="swatch swatch-transparent" title="Transparent"
+                            @click="applyLineLabelBg(TRANSPARENT_COLOR)"></button>
+                          <button v-for="color in SWATCHES" :key="`line-label-bg-${color}`" type="button" class="swatch"
+                            :style="{ backgroundColor: color }" @click="applyLineLabelBg(color)"></button>
                           <label class="swatch picker">
                             <input type="color" @change="onLineLabelBgPickerInput" />
                           </label>
@@ -4002,11 +4139,8 @@ watch(
               <div class="text-type-panel">
                 <label class="text-type-field">
                   <span>Police</span>
-                  <select
-                    :disabled="isLockedContext"
-                    :value="selectedTextStyle?.fontFamily"
-                    @change="applyTextFontFamilyFromSelect"
-                  >
+                  <select :disabled="isLockedContext" :value="selectedTextStyle?.fontFamily"
+                    @change="applyTextFontFamilyFromSelect">
                     <option v-for="option in TEXT_FONT_OPTIONS" :key="option.label" :value="option.value">
                       {{ option.label }}
                     </option>
@@ -4015,31 +4149,17 @@ watch(
                 <div class="text-type-row">
                   <span>Alignement</span>
                   <div class="icon-group">
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textAlign === 'left' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextAlign('left')"
-                    >
+                    <button type="button" class="icon-btn" :class="{ active: selectedTextStyle?.textAlign === 'left' }"
+                      :disabled="isLockedContext" @click="applyTextAlign('left')">
                       <font-awesome-icon icon="align-left" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textAlign === 'center' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextAlign('center')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textAlign === 'center' }" :disabled="isLockedContext"
+                      @click="applyTextAlign('center')">
                       <font-awesome-icon icon="align-center" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textAlign === 'right' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextAlign('right')"
-                    >
+                    <button type="button" class="icon-btn" :class="{ active: selectedTextStyle?.textAlign === 'right' }"
+                      :disabled="isLockedContext" @click="applyTextAlign('right')">
                       <font-awesome-icon icon="align-right" />
                     </button>
                   </div>
@@ -4047,31 +4167,19 @@ watch(
                 <div class="text-type-row">
                   <span>Alignement vertical</span>
                   <div class="icon-group">
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'top' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextVerticalAlign('top')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'top' }" :disabled="isLockedContext"
+                      @click="applyTextVerticalAlign('top')">
                       <font-awesome-icon icon="arrow-up" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'middle' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextVerticalAlign('middle')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'middle' }" :disabled="isLockedContext"
+                      @click="applyTextVerticalAlign('middle')">
                       <font-awesome-icon icon="grip-lines" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'bottom' }"
-                      :disabled="isLockedContext"
-                      @click="applyTextVerticalAlign('bottom')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textVerticalAlign === 'bottom' }" :disabled="isLockedContext"
+                      @click="applyTextVerticalAlign('bottom')">
                       <font-awesome-icon icon="arrow-down" />
                     </button>
                   </div>
@@ -4079,31 +4187,16 @@ watch(
                 <div class="text-type-row">
                   <span>Style</span>
                   <div class="icon-group">
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.bold }"
-                      :disabled="isLockedContext"
-                      @click="toggleTextBold"
-                    >
+                    <button type="button" class="icon-btn" :class="{ active: selectedTextStyle?.bold }"
+                      :disabled="isLockedContext" @click="toggleTextBold">
                       <font-awesome-icon icon="bold" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.italic }"
-                      :disabled="isLockedContext"
-                      @click="toggleTextItalic"
-                    >
+                    <button type="button" class="icon-btn" :class="{ active: selectedTextStyle?.italic }"
+                      :disabled="isLockedContext" @click="toggleTextItalic">
                       <font-awesome-icon icon="italic" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.underline }"
-                      :disabled="isLockedContext"
-                      @click="toggleTextUnderline"
-                    >
+                    <button type="button" class="icon-btn" :class="{ active: selectedTextStyle?.underline }"
+                      :disabled="isLockedContext" @click="toggleTextUnderline">
                       <font-awesome-icon icon="underline" />
                     </button>
                   </div>
@@ -4118,7 +4211,8 @@ watch(
                 </label>
                 <label class="text-type-field">
                   <span>Interligne</span>
-                  <select :disabled="isLockedContext" :value="selectedTextStyle?.lineHeight" @change="applyTextLineHeight">
+                  <select :disabled="isLockedContext" :value="selectedTextStyle?.lineHeight"
+                    @change="applyTextLineHeight">
                     <option v-for="value in TEXT_LINE_HEIGHT_OPTIONS" :key="`line-height-${value}`" :value="value">
                       {{ value.toFixed(1) }}
                     </option>
@@ -4126,12 +4220,10 @@ watch(
                 </label>
                 <label class="text-type-field">
                   <span>Espacement</span>
-                  <select
-                    :disabled="isLockedContext"
-                    :value="selectedTextStyle?.letterSpacing"
-                    @change="applyTextLetterSpacing"
-                  >
-                    <option v-for="value in TEXT_LETTER_SPACING_OPTIONS" :key="`letter-spacing-${value}`" :value="value">
+                  <select :disabled="isLockedContext" :value="selectedTextStyle?.letterSpacing"
+                    @change="applyTextLetterSpacing">
+                    <option v-for="value in TEXT_LETTER_SPACING_OPTIONS" :key="`letter-spacing-${value}`"
+                      :value="value">
                       {{ value }} px
                     </option>
                   </select>
@@ -4139,31 +4231,19 @@ watch(
                 <div class="text-type-row">
                   <span>Majuscules</span>
                   <div class="icon-group">
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textTransform === 'uppercase' }"
-                      :disabled="isLockedContext"
-                      @click="setTextTransform('uppercase')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textTransform === 'uppercase' }" :disabled="isLockedContext"
+                      @click="setTextTransform('uppercase')">
                       <font-awesome-icon icon="arrow-up-a-z" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textTransform === 'capitalize' }"
-                      :disabled="isLockedContext"
-                      @click="setTextTransform('capitalize')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textTransform === 'capitalize' }" :disabled="isLockedContext"
+                      @click="setTextTransform('capitalize')">
                       <font-awesome-icon icon="text-height" />
                     </button>
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      :class="{ active: selectedTextStyle?.textTransform === 'none' }"
-                      :disabled="isLockedContext"
-                      @click="setTextTransform('none')"
-                    >
+                    <button type="button" class="icon-btn"
+                      :class="{ active: selectedTextStyle?.textTransform === 'none' }" :disabled="isLockedContext"
+                      @click="setTextTransform('none')">
                       <font-awesome-icon icon="xmark" />
                     </button>
                   </div>
@@ -4183,13 +4263,16 @@ watch(
             </button>
             <div class="submenu">
               <div class="submenu-actions">
-                <button type="button" class="menu-item" :disabled="isLockedContext" @click="applyEnvelopeType('convex')">
+                <button type="button" class="menu-item" :disabled="isLockedContext"
+                  @click="applyEnvelopeType('convex')">
                   Convexe
                 </button>
-                <button type="button" class="menu-item" :disabled="isLockedContext" @click="applyEnvelopeType('rectangle')">
+                <button type="button" class="menu-item" :disabled="isLockedContext"
+                  @click="applyEnvelopeType('rectangle')">
                   Rectangle
                 </button>
-                <button type="button" class="menu-item" :disabled="isLockedContext" @click="applyEnvelopeType('rounded')">
+                <button type="button" class="menu-item" :disabled="isLockedContext"
+                  @click="applyEnvelopeType('rounded')">
                   Arrondi
                 </button>
               </div>
@@ -4207,14 +4290,8 @@ watch(
             </button>
             <div class="submenu">
               <div class="swatches">
-                <button
-                  v-for="color in SWATCHES"
-                  :key="`stroke-${color}`"
-                  type="button"
-                  class="swatch"
-                  :style="{ backgroundColor: color }"
-                  @click="applyStrokeColor(color)"
-                ></button>
+                <button v-for="color in SWATCHES" :key="`stroke-${color}`" type="button" class="swatch"
+                  :style="{ backgroundColor: color }" @click="applyStrokeColor(color)"></button>
                 <label class="swatch picker">
                   <input type="color" @change="onStrokePickerInput" />
                 </label>
@@ -4248,14 +4325,8 @@ watch(
             </button>
             <div class="submenu">
               <div class="swatches">
-                <button
-                  v-for="color in SWATCHES"
-                  :key="`note-text-${color}`"
-                  type="button"
-                  class="swatch"
-                  :style="{ backgroundColor: color }"
-                  @click="applyNoteTextColor(color)"
-                ></button>
+                <button v-for="color in SWATCHES" :key="`note-text-${color}`" type="button" class="swatch"
+                  :style="{ backgroundColor: color }" @click="applyNoteTextColor(color)"></button>
                 <label class="swatch picker">
                   <input type="color" @change="onNoteTextPickerInput" />
                 </label>
@@ -4293,20 +4364,12 @@ watch(
                   Aligner en bas
                 </button>
                 <div class="submenu-separator"></div>
-                <button
-                  type="button"
-                  class="menu-item"
-                  :disabled="isLockedContext || !canDistributeSelection"
-                  @click="applyDistribution('horizontal')"
-                >
+                <button type="button" class="menu-item" :disabled="isLockedContext || !canDistributeSelection"
+                  @click="applyDistribution('horizontal')">
                   Distribuer horizontalement
                 </button>
-                <button
-                  type="button"
-                  class="menu-item"
-                  :disabled="isLockedContext || !canDistributeSelection"
-                  @click="applyDistribution('vertical')"
-                >
+                <button type="button" class="menu-item" :disabled="isLockedContext || !canDistributeSelection"
+                  @click="applyDistribution('vertical')">
                   Distribuer verticalement
                 </button>
               </div>
@@ -4344,61 +4407,34 @@ watch(
             </div>
           </div>
         </div>
-        <button
-          v-if="canExcludeFromEnvelope"
-          type="button"
-          class="menu-item"
-          :disabled="isLockedContext"
-          @click="excludeFromEnvelopeFromContext"
-        >
+        <button v-if="canExcludeFromEnvelope" type="button" class="menu-item" :disabled="isLockedContext"
+          @click="excludeFromEnvelopeFromContext">
           <span class="menu-item-leading"><font-awesome-icon icon="right-from-bracket" /></span>
           Exclure de l'enveloppe
         </button>
-        <button
-          v-if="elementLockAction"
-          type="button"
-          class="menu-item menu-item-with-separator"
+        <button v-if="elementLockAction" type="button" class="menu-item menu-item-with-separator"
           :class="{ danger: elementLockAction.variant === 'danger' }"
-          :disabled="isContextActionDisabled(elementLockAction)"
-          @click="runContextAction(elementLockAction)"
-        >
+          :disabled="isContextActionDisabled(elementLockAction)" @click="runContextAction(elementLockAction)">
           <span class="menu-item-leading"><font-awesome-icon :icon="getContextActionIcon(elementLockAction)" /></span>
           {{ getContextActionLabel(elementLockAction) }}
         </button>
-        <button
-          v-for="action in elementContextActionsAfterLock"
-          :key="`element-action-${action.id}`"
-          type="button"
-          class="menu-item"
-          :class="{ danger: action.variant === 'danger' }"
-          :disabled="isContextActionDisabled(action)"
-          @click="runContextAction(action)"
-        >
+        <button v-for="action in elementContextActionsAfterLock" :key="`element-action-${action.id}`" type="button"
+          class="menu-item" :class="{ danger: action.variant === 'danger' }" :disabled="isContextActionDisabled(action)"
+          @click="runContextAction(action)">
           <span class="menu-item-leading"><font-awesome-icon :icon="getContextActionIcon(action)" /></span>
           {{ getContextActionLabel(action) }}
         </button>
       </template>
       <template v-else>
         <div class="menu-icons">
-          <button
-            v-for="element in ADDABLE_ELEMENTS"
-            :key="`add-${element.id}`"
-            type="button"
-            :title="element.title"
-            @click="createFromContext(element.id)"
-          >
+          <button v-for="element in ADDABLE_ELEMENTS" :key="`add-${element.id}`" type="button" :title="element.title"
+            @click="createFromContext(element.id)">
             <font-awesome-icon :icon="element.icon" />
           </button>
         </div>
-        <button
-          v-for="action in canvasContextActions"
-          :key="`canvas-action-${action.id}`"
-          type="button"
-          class="menu-item"
-          :class="{ danger: action.variant === 'danger' }"
-          :disabled="isContextActionDisabled(action)"
-          @click="runContextAction(action)"
-        >
+        <button v-for="action in canvasContextActions" :key="`canvas-action-${action.id}`" type="button"
+          class="menu-item" :class="{ danger: action.variant === 'danger' }" :disabled="isContextActionDisabled(action)"
+          @click="runContextAction(action)">
           <span class="menu-item-leading"><font-awesome-icon :icon="getContextActionIcon(action)" /></span>
           {{ getContextActionLabel(action) }}
         </button>
@@ -4523,6 +4559,44 @@ canvas {
   text-align: center;
   color: #0f172a;
   font: 700 0.82rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.note-reaction-menu {
+  position: absolute;
+  z-index: 23;
+  width: 184px;
+  border: 1px solid #d0d7de;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.note-reaction-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+  text-align: center;
+}
+
+.note-reaction-emoji:hover {
+  background: rgba(226, 232, 240, 0.35);
+}
+
+.note-reaction-emoji.active {
+  background: rgba(191, 219, 254, 0.45);
 }
 
 .vote-results-modal {
@@ -4705,7 +4779,7 @@ canvas {
   width: 8px;
 }
 
-.menu-submenu-row:hover > .submenu {
+.menu-submenu-row:hover>.submenu {
   display: block;
 }
 
@@ -4812,13 +4886,11 @@ canvas {
 
 .swatch-transparent {
   background:
-    linear-gradient(
-      45deg,
+    linear-gradient(45deg,
       #e2e8f0 0 25%,
       #ffffff 25% 50%,
       #e2e8f0 50% 75%,
-      #ffffff 75% 100%
-    );
+      #ffffff 75% 100%);
   background-size: 12px 12px;
 }
 
@@ -4908,5 +4980,3 @@ canvas {
   }
 }
 </style>
-
-

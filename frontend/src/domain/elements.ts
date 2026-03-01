@@ -56,6 +56,7 @@ export type NoteElement = BaseCanvasElement & {
   type: "note";
   text: string;
   textColor?: string;
+  noteReactions?: Record<string, string>;
   fontSize: number;
   fontFamily: string;
   textAlign: TextAlign;
@@ -226,6 +227,7 @@ const noteDefinition: ElementDefinition<NoteElement> = {
     locked: overrides?.locked ?? false,
     shadowType: overrides?.shadowType ?? "none",
     textColor: overrides?.textColor ?? "#1f2937",
+    noteReactions: overrides?.noteReactions ?? {},
     text: overrides?.text ?? "Nouvelle note carree",
     fontSize: overrides?.fontSize ?? 20,
     fontFamily: overrides?.fontFamily ?? "system-ui",

@@ -10,12 +10,14 @@ const props = withDefaults(
     title?: string;
     username: string;
     userAvatar?: string;
+    userId?: string;
     timerSoundMp3?: string;
     timerSoundOgg?: string;
   }>(),
   {
     title: "Canvas Notes",
     userAvatar: "",
+    userId: "",
     timerSoundMp3: "",
     timerSoundOgg: "",
   },
@@ -33,9 +35,9 @@ watch(
 );
 
 watch(
-  () => [props.username, props.userAvatar],
+  () => [props.username, props.userAvatar, props.userId],
   () => {
-    canvasStore.setLocalIdentity(props.username, props.userAvatar ?? "");
+    canvasStore.setLocalIdentity(props.username, props.userAvatar ?? "", props.userId ?? "");
   },
   { immediate: true },
 );
