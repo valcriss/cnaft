@@ -10,8 +10,10 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY src ./src
+COPY entrypoint.sh ./entrypoint.sh
 RUN npm run build && npm prune --omit=dev
+RUN chmod +x ./entrypoint.sh
 
 EXPOSE 4000
 
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["./entrypoint.sh"]
