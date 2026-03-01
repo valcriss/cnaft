@@ -55,8 +55,6 @@ const workspaceUserId = computed(() => auth.state.user?.id || queryUsername.valu
 const workspaceUserEmail = computed(() => auth.state.user?.email || "");
 
 function setupCollabFromQuery() {
-  const currentDocumentId = documentId.value;
-  if (!currentDocumentId) return;
   const collabMode = route.query.collab;
   const username = queryUsername.value;
   if (collabMode !== "mock") return;
