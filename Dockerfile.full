@@ -33,8 +33,11 @@ ENV FRONTEND_DIST_DIR=/app/public
 COPY --from=backend-build /app/backend/package*.json ./
 COPY --from=backend-build /app/backend/node_modules ./node_modules
 COPY --from=backend-build /app/backend/dist ./dist
+COPY --from=backend-build /app/backend/prisma ./prisma
 COPY --from=frontend-build /app/frontend/dist ./public
+COPY backend/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 EXPOSE 4000
 
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["./entrypoint.sh"]
