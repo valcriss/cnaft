@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  passwordHash   String?
+  displayName    String
+  avatarUrl      String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  documents      Document[]
+  documentAccess DocumentMember[]
+}
+
+model Document {
+  id            String         @id @default(cuid())
+  ownerId       String
+  title         String
+  contentJson   Json
+  thumbnailJson Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  members       DocumentMember[]
+  shareLinks    DocumentShareLink[]
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, updatedAt])
+}
+
+model DocumentMember {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  role       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId])
+  @@index([documentId, role])
+}
+
+model DocumentShareLink {
+  id           String   @id @default(cuid())
+  documentId   String
+  tokenHash    String   @unique
+  role         String
+  expiresAt    DateTime?
+  createdById  String
+  createdAt    DateTime @default(now())
+  revokedAt    DateTime?
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, revokedAt])
+}

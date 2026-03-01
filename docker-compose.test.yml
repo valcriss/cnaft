@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cnaft-postgres-test
+    environment:
+      POSTGRES_DB: cnaft_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cnaft_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: cnaft-backend:test
+    container_name: cnaft-backend-test
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/cnaft_test?schema=public
+      JWT_ACCESS_SECRET: test-access-secret
+      JWT_REFRESH_SECRET: test-refresh-secret
+      AUTH_PROVIDER: local
+      OIDC_ISSUER: ""
+      OIDC_CLIENT_ID: ""
+      OIDC_CLIENT_SECRET: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: cnaft-frontend:test
+    container_name: cnaft-frontend-test
+    depends_on:
+      - backend
+    ports:
+      - "4173:80"
+
+  full:
+    build:
+      context: .
+      dockerfile: Dockerfile.full
+    image: cnaft-full:test
+    container_name: cnaft-full-test
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/cnaft_test?schema=public
+      JWT_ACCESS_SECRET: test-access-secret
+      JWT_REFRESH_SECRET: test-refresh-secret
+      AUTH_PROVIDER: local
+      OIDC_ISSUER: ""
+      OIDC_CLIENT_ID: ""
+      OIDC_CLIENT_SECRET: ""
+      FRONTEND_DIST_DIR: /app/public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4174:4000"
+
+volumes:
+  postgres_test_data:
