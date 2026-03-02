@@ -1,3 +1,5 @@
+import { randomUUID } from "../utils/uuid";
+
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type StrokeStyle = "solid" | "dashed" | "dotted";
 export type LineRoute = "straight" | "orthogonal" | "curve";
@@ -153,7 +155,7 @@ type ElementDefinition<T extends CanvasElement> = {
 const rectangleDefinition: ElementDefinition<RectangleElement> = {
   type: "rectangle",
   create: ({ id, x, y, overrides }) => ({
-    id: id ?? crypto.randomUUID(),
+    id: id ?? randomUUID(),
     type: "rectangle",
     x,
     y,
@@ -180,7 +182,7 @@ const textDefinition: ElementDefinition<TextElement> = {
     const fontSize = overrides?.fontSize ?? DEFAULT_TEXT_SIZE;
 
     return {
-      id: id ?? crypto.randomUUID(),
+      id: id ?? randomUUID(),
       type: "text",
       x,
       y,
@@ -215,7 +217,7 @@ const textDefinition: ElementDefinition<TextElement> = {
 const noteDefinition: ElementDefinition<NoteElement> = {
   type: "note",
   create: ({ id, x, y, overrides }) => ({
-    id: id ?? crypto.randomUUID(),
+    id: id ?? randomUUID(),
     type: "note",
     x,
     y,
@@ -254,7 +256,7 @@ const lineDefinition: ElementDefinition<LineElement> = {
     const x2 = overrides?.x2 ?? x + 180;
     const y2 = overrides?.y2 ?? y;
     return {
-      id: id ?? crypto.randomUUID(),
+      id: id ?? randomUUID(),
       type: "line",
       x,
       y,
@@ -291,7 +293,7 @@ const lineDefinition: ElementDefinition<LineElement> = {
 const imageDefinition: ElementDefinition<ImageElement> = {
   type: "image",
   create: ({ id, x, y, overrides }) => ({
-    id: id ?? crypto.randomUUID(),
+    id: id ?? randomUUID(),
     type: "image",
     x,
     y,
@@ -315,7 +317,7 @@ const imageDefinition: ElementDefinition<ImageElement> = {
 const envelopeDefinition: ElementDefinition<EnvelopeElement> = {
   type: "envelope",
   create: ({ id, x, y, overrides }) => ({
-    id: id ?? crypto.randomUUID(),
+    id: id ?? randomUUID(),
     type: "envelope",
     x,
     y,

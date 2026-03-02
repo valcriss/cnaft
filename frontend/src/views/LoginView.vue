@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ApiError, useAuthStore } from "../stores/useAuthStore";
+import { randomUUID } from "../utils/uuid";
 
 const auth = useAuthStore();
 const route = useRoute();
@@ -64,7 +65,7 @@ async function submitLocal() {
 }
 
 function randomState() {
-  return crypto.randomUUID().replace(/-/g, "");
+  return randomUUID().replace(/-/g, "");
 }
 
 async function startOidcLogin() {
