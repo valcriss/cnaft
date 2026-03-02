@@ -10,8 +10,19 @@ import { requireAuth } from "./middleware/auth.js";
 
 export function createApp() {
   const app = express();
+  const forceHttps = config.FORCE_HTTPS;
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Force HTTPS-related browser protections unless explicitly disabled.
+      contentSecurityPolicy: {
+        directives: {
+          upgradeInsecureRequests: forceHttps ? [] : null,
+        },
+      },
+      hsts: forceHttps,
+    }),
+  );
   app.use(cors({ origin: config.CORS_ORIGIN === "*" ? true : config.CORS_ORIGIN }));
   app.use(express.json({ limit: "5mb" }));
 

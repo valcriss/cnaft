@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+const booleanFromEnv = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -13,6 +22,7 @@ const envSchema = z.object({
   OIDC_ISSUER: z.string().optional().default(""),
   OIDC_CLIENT_ID: z.string().optional().default(""),
   OIDC_CLIENT_SECRET: z.string().optional().default(""),
+  FORCE_HTTPS: booleanFromEnv.default(true),
   FRONTEND_DIST_DIR: z.string().optional().default(""),
 });
 
