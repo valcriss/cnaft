@@ -26,6 +26,7 @@ import {
 } from "../domain/documentSchema";
 import { LocalLoopbackAdapter, type CollabAdapter } from "../collab/collabAdapter";
 import { OP_SCHEMA_VERSION, OP_VERSION, isValidOperation, type Operation } from "../collab/operations";
+import { randomUUID } from "../utils/uuid";
 
 type Snapshot = {
   elements: CanvasElement[];
@@ -182,7 +183,7 @@ const state = reactive<CanvasState>({
     recentOps: [],
   },
   revision: 0,
-  clientId: crypto.randomUUID(),
+  clientId: randomUUID(),
 });
 state.localIdentity.color = hashColorFromClientId(state.clientId);
 
@@ -496,7 +497,7 @@ function recordSnapshot() {
 }
 
 function nextOperationId() {
-  return `${state.clientId}:${crypto.randomUUID()}`;
+  return `${state.clientId}:${randomUUID()}`;
 }
 
 function hashColorFromClientId(clientId: string) {
@@ -974,7 +975,7 @@ function updatePresenceEditing(elementId: string | null) {
 function acquireElementLocks(ids: string[], ttlMs = LOCK_TTL_MS) {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return { lockId: null as string | null, acquiredIds: [] as string[] };
-  const lockId = crypto.randomUUID();
+  const lockId = randomUUID();
   const acquiredIds: string[] = [];
   for (const id of unique) {
     if (isElementLockedForClient(id, state.clientId)) continue;
@@ -3182,11 +3183,11 @@ function duplicateSelected(offsetX = 24, offsetY = 24) {
   if (selected.length === 0) return;
   const idMap = new Map<string, string>();
   for (const element of selected) {
-    idMap.set(element.id, crypto.randomUUID());
+    idMap.set(element.id, randomUUID());
   }
 
   const duplicated: CanvasElement[] = selected.map((el) => {
-    const nextId = idMap.get(el.id) ?? crypto.randomUUID();
+    const nextId = idMap.get(el.id) ?? randomUUID();
     if (el.type === "line") {
       return {
         ...el,
@@ -3264,11 +3265,11 @@ function pasteAt(worldX: number, worldY: number) {
 
   const idMap = new Map<string, string>();
   for (const element of clipboard) {
-    idMap.set(element.id, crypto.randomUUID());
+    idMap.set(element.id, randomUUID());
   }
 
   const pasted = clipboard.map((el) => {
-    const nextId = idMap.get(el.id) ?? crypto.randomUUID();
+    const nextId = idMap.get(el.id) ?? randomUUID();
     if (el.type === "line") {
       return {
         ...el,
@@ -3744,7 +3745,7 @@ function importDocumentJson(jsonText: string) {
     const type = item.type;
     const x = typeof item.x === "number" ? item.x : 0;
     const y = typeof item.y === "number" ? item.y : 0;
-    const id = typeof item.id === "string" ? item.id : crypto.randomUUID();
+    const id = typeof item.id === "string" ? item.id : randomUUID();
     if (
       type !== "rectangle" &&
       type !== "text" &&
@@ -3907,6 +3908,5 @@ export function useCanvasStore() {
     redo,
   };
 }
-
 
 
