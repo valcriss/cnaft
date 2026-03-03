@@ -5,8 +5,23 @@ import { prisma } from "../lib/prisma.js";
 import { canRead, canWrite, getDocumentRole } from "../services/documentAccess.js";
 
 const router = Router();
-const jsonValueSchema = z.unknown();
-const nullableJsonValueSchema = z.unknown().nullable();
+
+type JsonPrimitive = string | number | boolean;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return false;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every(isJsonValue);
+  }
+  return false;
+}
+
+const jsonValueSchema = z.custom<JsonValue>((value) => isJsonValue(value), {
+  error: "Invalid JSON value",
+});
 
 type ListedDocument = {
   id: string;
@@ -24,13 +39,13 @@ type Membership = {
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(120).default("Nouveau document"),
   contentJson: jsonValueSchema.default({}),
-  thumbnailJson: nullableJsonValueSchema.optional(),
+  thumbnailJson: jsonValueSchema.optional(),
 });
 
 const updateDocumentSchema = z.object({
   title: z.string().min(1).max(120).optional(),
   contentJson: jsonValueSchema.optional(),
-  thumbnailJson: nullableJsonValueSchema.optional(),
+  thumbnailJson: jsonValueSchema.optional(),
 });
 
 const shareSchema = z.object({
