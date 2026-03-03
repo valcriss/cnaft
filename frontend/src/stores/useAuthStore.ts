@@ -18,6 +18,7 @@ type AuthProviderInfo = {
   provider: "local" | "oidc";
   local: boolean;
   oidc: boolean;
+  oidcTransparentLogin: boolean;
 };
 
 const STORAGE_KEY = "cnaft.auth.v1";

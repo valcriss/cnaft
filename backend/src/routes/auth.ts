@@ -76,6 +76,7 @@ router.get("/providers", (_req, res) => {
     provider: config.AUTH_PROVIDER,
     local: config.AUTH_PROVIDER === "local",
     oidc: config.AUTH_PROVIDER === "oidc",
+    oidcTransparentLogin: config.OIDC_TRANSPARENT_LOGIN,
   });
 });
 

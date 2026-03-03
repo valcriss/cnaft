@@ -41,6 +41,9 @@ Set in `.env`:
 - `OIDC_ISSUER=https://<keycloak>/realms/<realm>`
 - `OIDC_CLIENT_ID=<client-id>`
 - `OIDC_CLIENT_SECRET=<client-secret>`
+- `OIDC_TRANSPARENT_LOGIN=true` (default; frontend login auto-redirects to SSO)
+- `OIDC_CA_CERT_PATH=/path/to/internal-ca.pem` (optional custom CA for outgoing OIDC TLS)
+- `OIDC_TLS_INSECURE=true` (optional; disable TLS verification for outgoing OIDC calls)
 
 Then use:
 

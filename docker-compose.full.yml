@@ -29,6 +29,9 @@ services:
       OIDC_ISSUER: ''
       OIDC_CLIENT_ID: ''
       OIDC_CLIENT_SECRET: ''
+      OIDC_TRANSPARENT_LOGIN: 'true'
+      OIDC_CA_CERT_PATH: ''
+      OIDC_TLS_INSECURE: 'false'
       FRONTEND_DIST_DIR: /app/public
     depends_on:
       postgres:

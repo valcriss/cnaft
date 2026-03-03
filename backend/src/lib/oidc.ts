@@ -1,4 +1,8 @@
 import { config } from "../config.js";
+import fs from "node:fs";
+import path from "node:path";
+import http from "node:http";
+import https from "node:https";
 
 type OidcMetadata = {
   issuer: string;
@@ -8,18 +12,92 @@ type OidcMetadata = {
 };
 
 let metadataCache: OidcMetadata | null = null;
+let oidcCaBundleCache: string | undefined;
+let oidcCaBundleLoaded = false;
+
+type OidcRequestInit = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | URLSearchParams;
+};
 
 function normalizeIssuer(issuer: string) {
   return issuer.endsWith("/") ? issuer.slice(0, -1) : issuer;
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`OIDC request failed (${response.status}) ${url}: ${text}`);
+function getOidcCaBundle() {
+  if (oidcCaBundleLoaded) return oidcCaBundleCache;
+  oidcCaBundleLoaded = true;
+  const certPath = config.OIDC_CA_CERT_PATH?.trim();
+  if (!certPath) {
+    oidcCaBundleCache = undefined;
+    return oidcCaBundleCache;
   }
-  return (await response.json()) as T;
+  const resolvedPath = path.resolve(certPath);
+  try {
+    oidcCaBundleCache = fs.readFileSync(resolvedPath, "utf8");
+    return oidcCaBundleCache;
+  } catch (error) {
+    throw new Error(`Unable to read OIDC_CA_CERT_PATH at ${resolvedPath}: ${String(error)}`);
+  }
+}
+
+async function fetchJson<T>(url: string, init?: OidcRequestInit) {
+  const targetUrl = new URL(url);
+  const isHttps = targetUrl.protocol === "https:";
+  const method = init?.method ?? "GET";
+  const headers: Record<string, string> = init?.headers ? { ...init.headers } : {};
+
+  const bodyRaw = init?.body;
+  const body = bodyRaw instanceof URLSearchParams ? bodyRaw.toString() : bodyRaw;
+  if (bodyRaw instanceof URLSearchParams && !headers["Content-Type"] && !headers["content-type"]) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+  }
+  if (body && !headers["Content-Length"] && !headers["content-length"]) {
+    headers["Content-Length"] = String(Buffer.byteLength(body));
+  }
+
+  const requestOptions: https.RequestOptions = {
+    method,
+    headers,
+  };
+
+  if (isHttps) {
+    requestOptions.rejectUnauthorized = !config.OIDC_TLS_INSECURE;
+    const caBundle = getOidcCaBundle();
+    if (caBundle) requestOptions.ca = caBundle;
+  }
+
+  const client = isHttps ? https : http;
+  const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+    const request = client.request(targetUrl, requestOptions, (incoming) => {
+      const chunks: Buffer[] = [];
+      incoming.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      incoming.on("end", () => {
+        resolve({
+          statusCode: incoming.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+        });
+      });
+      incoming.on("error", reject);
+    });
+
+    request.on("error", reject);
+    if (body) request.write(body);
+    request.end();
+  });
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`OIDC request failed (${response.statusCode}) ${url}: ${response.body}`);
+  }
+
+  try {
+    return JSON.parse(response.body) as T;
+  } catch {
+    throw new Error(`OIDC request returned invalid JSON ${url}: ${response.body}`);
+  }
 }
 
 function decodeJwtPayload(token: string) {

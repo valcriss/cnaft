@@ -1,13 +1,25 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { canRead, canWrite, getDocumentRole } from "../services/documentAccess.js";
 
 const router = Router();
-const jsonValueSchema = z.custom<Prisma.InputJsonValue>();
-const nullableJsonValueSchema = z.custom<Prisma.InputJsonValue | null>();
+const jsonValueSchema = z.unknown();
+const nullableJsonValueSchema = z.unknown().nullable();
+
+type ListedDocument = {
+  id: string;
+  title: string;
+  thumbnailJson: unknown;
+  updatedAt: Date;
+  ownerId: string;
+};
+
+type Membership = {
+  documentId: string;
+  role: string;
+};
 
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(120).default("Nouveau document"),
@@ -28,7 +40,7 @@ const shareSchema = z.object({
 
 router.get("/", async (req, res) => {
   const userId = req.auth!.userId;
-  const owned = await prisma.document.findMany({
+  const owned = (await prisma.document.findMany({
     where: { ownerId: userId },
     orderBy: { updatedAt: "desc" },
     select: {
@@ -38,14 +50,14 @@ router.get("/", async (req, res) => {
       updatedAt: true,
       ownerId: true,
     },
-  });
+  })) as ListedDocument[];
 
-  const memberships = await prisma.documentMember.findMany({
+  const memberships = (await prisma.documentMember.findMany({
     where: { userId },
     select: { documentId: true, role: true },
-  });
+  })) as Membership[];
   const memberIds = memberships.map((m) => m.documentId);
-  const shared = memberIds.length
+  const shared: ListedDocument[] = memberIds.length
     ? await prisma.document.findMany({
         where: { id: { in: memberIds } },
         orderBy: { updatedAt: "desc" },
@@ -73,13 +85,13 @@ router.post("/", async (req, res) => {
     return;
   }
   const payload = parsed.data;
-  const createData: Prisma.DocumentCreateInput = {
+  const createData = {
     owner: { connect: { id: req.auth!.userId } },
     title: payload.title,
     contentJson: payload.contentJson,
     ...(typeof payload.thumbnailJson !== "undefined"
       ? {
-          thumbnailJson: payload.thumbnailJson === null ? Prisma.JsonNull : payload.thumbnailJson,
+          thumbnailJson: payload.thumbnailJson,
         }
       : {}),
   };
@@ -130,11 +142,11 @@ router.patch("/:id", async (req, res) => {
     res.status(400).json({ error: "Nothing to update" });
     return;
   }
-  const updateData: Prisma.DocumentUpdateInput = {
+  const updateData = {
     ...(typeof payload.title !== "undefined" ? { title: payload.title } : {}),
     ...(typeof payload.contentJson !== "undefined" ? { contentJson: payload.contentJson } : {}),
     ...(typeof payload.thumbnailJson !== "undefined"
-      ? { thumbnailJson: payload.thumbnailJson === null ? Prisma.JsonNull : payload.thumbnailJson }
+      ? { thumbnailJson: payload.thumbnailJson }
       : {}),
   };
   const updated = await prisma.document.update({

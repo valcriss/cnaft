@@ -12,6 +12,8 @@ const mode = ref<"login" | "register">("login");
 const loading = ref(false);
 const errorMessage = ref("");
 const provider = ref<"local" | "oidc">("local");
+const oidcTransparentLogin = ref(true);
+const autoOidcAttempted = ref(false);
 
 const formEmail = ref("");
 const formPassword = ref("");
@@ -27,8 +29,15 @@ async function loadProviders() {
   try {
     const result = await auth.getProviders();
     provider.value = result.provider;
+    oidcTransparentLogin.value = result.oidcTransparentLogin;
   } catch {
     provider.value = "local";
+    oidcTransparentLogin.value = false;
+  }
+
+  if (provider.value === "oidc" && oidcTransparentLogin.value && !autoOidcAttempted.value) {
+    autoOidcAttempted.value = true;
+    await startOidcLogin();
   }
 }
 loadProviders();
@@ -69,6 +78,7 @@ function randomState() {
 }
 
 async function startOidcLogin() {
+  if (loading.value) return;
   loading.value = true;
   errorMessage.value = "";
   try {
@@ -94,6 +104,7 @@ async function startOidcLogin() {
       <p class="sub">Accede a tes documents collaboratifs.</p>
 
       <template v-if="provider === 'oidc'">
+        <p v-if="oidcTransparentLogin && !errorMessage" class="sub">Redirection automatique vers le fournisseur OpenID...</p>
         <button class="primary-btn" :disabled="loading" @click="startOidcLogin">
           Se connecter avec le fournisseur OpenID
         </button>

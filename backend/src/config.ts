@@ -22,6 +22,9 @@ const envSchema = z.object({
   OIDC_ISSUER: z.string().optional().default(""),
   OIDC_CLIENT_ID: z.string().optional().default(""),
   OIDC_CLIENT_SECRET: z.string().optional().default(""),
+  OIDC_TRANSPARENT_LOGIN: booleanFromEnv.default(true),
+  OIDC_CA_CERT_PATH: z.string().optional().default(""),
+  OIDC_TLS_INSECURE: booleanFromEnv.default(false),
   FORCE_HTTPS: booleanFromEnv.default(true),
   FRONTEND_DIST_DIR: z.string().optional().default(""),
 });
