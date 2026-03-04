@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import UserAccountMenu from "../components/auth/UserAccountMenu.vue";
 import CanvasWorkspace from "../components/CanvasWorkspace.vue";
 import { useCanvasStore } from "../stores/useCanvasStore";
 import { useAuthStore } from "../stores/useAuthStore";
@@ -52,7 +53,6 @@ const queryUserAvatar = computed(() => {
 const workspaceUsername = computed(() => auth.state.user?.displayName || queryUsername.value || "Utilisateur");
 const workspaceUserAvatar = computed(() => auth.state.user?.avatarUrl || queryUserAvatar.value || "");
 const workspaceUserId = computed(() => auth.state.user?.id || queryUsername.value || "");
-const workspaceUserEmail = computed(() => auth.state.user?.email || "");
 
 function setupCollabFromQuery() {
   const collabMode = route.query.collab;
@@ -428,11 +428,6 @@ watch(
 function goDashboard() {
   router.push("/dashboard");
 }
-
-function logout() {
-  auth.logout();
-  router.replace("/login");
-}
 </script>
 
 <template>
@@ -458,15 +453,7 @@ function logout() {
         <small v-if="isSavingTitle" class="muted">Sauvegarde titre...</small>
       </div>
       <div class="right-actions">
-        <div class="user-chip">
-          <img v-if="workspaceUserAvatar" :src="workspaceUserAvatar" :alt="workspaceUsername" />
-          <span v-else class="fallback">{{ workspaceUsername.slice(0, 2).toUpperCase() }}</span>
-          <div class="user-meta">
-            <strong>{{ workspaceUsername }}</strong>
-            <small>{{ workspaceUserEmail }}</small>
-          </div>
-        </div>
-        <button type="button" class="ghost-btn" @click="logout">Deconnexion</button>
+        <UserAccountMenu />
       </div>
     </header>
 
@@ -565,42 +552,6 @@ function logout() {
   color: #334155;
   font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
-}
-
-.user-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.user-chip img,
-.user-chip .fallback {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  object-fit: cover;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #eff6ff;
-  color: #1e3a8a;
-  font: 700 0.72rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.user-meta {
-  display: grid;
-  gap: 1px;
-}
-
-.user-meta strong {
-  color: #0f172a;
-  font: 600 0.75rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.user-meta small {
-  color: #64748b;
-  font: 500 0.68rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .muted {

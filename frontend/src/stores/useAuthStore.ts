@@ -88,6 +88,11 @@ function clearSession() {
   persist();
 }
 
+function setUser(user: AuthUser | null) {
+  state.user = user;
+  persist();
+}
+
 function decodeJwtPayload(token: string) {
   const [, payload] = token.split(".");
   if (!payload) return null;
@@ -173,8 +178,7 @@ async function apiRequest<T>(path: string, options?: { method?: string; body?: u
 
 async function fetchMe() {
   const data = await apiRequest<{ user: AuthUser }>("/auth/me", { auth: true });
-  state.user = data.user;
-  persist();
+  setUser(data.user);
   return data.user;
 }
 
@@ -286,6 +290,7 @@ export function useAuthStore() {
     getProviders,
     buildOidcAuthorizeUrl,
     exchangeOidcCode,
+    setUser,
     logout: clearSession,
     apiRequest,
   };

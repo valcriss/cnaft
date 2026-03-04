@@ -23,6 +23,12 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
+const avatarUpdateSchema = z.object({
+  avatarDataUrl: z.string().max(2_000_000).nullable(),
+});
+const profileUpdateSchema = z.object({
+  displayName: z.string().trim().min(2).max(80),
+});
 const oidcAuthorizeSchema = z.object({
   redirectUri: z.url(),
   state: z.string().min(8).max(512),
@@ -242,6 +248,53 @@ router.get("/me", requireAuth, async (req, res) => {
     res.status(404).json({ error: "User not found" });
     return;
   }
+  res.json({ user });
+});
+
+router.patch("/me/avatar", requireAuth, async (req, res) => {
+  const parsed = avatarUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const { avatarDataUrl } = parsed.data;
+  if (avatarDataUrl && !avatarDataUrl.startsWith("data:image/")) {
+    res.status(400).json({ error: "Invalid avatar format" });
+    return;
+  }
+
+  const user = await prisma.user.update({
+    where: { id: req.auth!.userId },
+    data: {
+      avatarUrl: avatarDataUrl,
+    },
+    select: { id: true, email: true, displayName: true, avatarUrl: true },
+  });
+
+  res.json({ user });
+});
+
+router.patch("/me", requireAuth, async (req, res) => {
+  if (req.auth?.provider === "oidc") {
+    res.status(403).json({ error: "Profile update disabled with OIDC" });
+    return;
+  }
+
+  const parsed = profileUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const user = await prisma.user.update({
+    where: { id: req.auth!.userId },
+    data: {
+      displayName: parsed.data.displayName,
+    },
+    select: { id: true, email: true, displayName: true, avatarUrl: true },
+  });
+
   res.json({ user });
 });
 

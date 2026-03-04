@@ -1,6 +1,7 @@
-﻿<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import UserAccountMenu from "../components/auth/UserAccountMenu.vue";
 import { ApiError, useAuthStore } from "../stores/useAuthStore";
 
 type DocTile = {
@@ -23,14 +24,7 @@ const creating = ref(false);
 const errorMessage = ref("");
 const docs = ref<DocTile[]>([]);
 const nowTs = ref(Date.now());
-
-const tokenStatus = computed(() => {
-  const remaining = auth.accessTokenRemainingSec.value;
-  if (remaining === null) return "Session active";
-  if (remaining <= 0) return "Session expiree";
-  if (remaining < 120) return `Session expire dans ${remaining}s`;
-  return `Session active (${Math.floor(remaining / 60)} min)`;
-});
+let nowTickIntervalId: number | null = null;
 
 function mapApiError(error: unknown) {
   if (error instanceof ApiError) {
@@ -86,11 +80,6 @@ function openDocument(id: string) {
   router.push(`/documents/${id}`);
 }
 
-function logout() {
-  auth.logout();
-  router.replace("/login");
-}
-
 function formatDate(value: string) {
   return new Date(value).toLocaleString("fr-FR", {
     day: "2-digit",
@@ -99,18 +88,6 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function getInitials() {
-  const username = auth.state.user?.displayName || "U";
-  return (
-    username
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "U"
-  );
 }
 
 function getSvgThumbnailPayload(value: unknown): SvgThumbnailPayload | null {
@@ -127,9 +104,16 @@ function svgToDataUrl(svg: string) {
 
 onMounted(() => {
   loadDocuments();
-  window.setInterval(() => {
+  nowTickIntervalId = window.setInterval(() => {
     nowTs.value = Date.now();
   }, 10_000);
+});
+
+onUnmounted(() => {
+  if (nowTickIntervalId !== null) {
+    window.clearInterval(nowTickIntervalId);
+    nowTickIntervalId = null;
+  }
 });
 </script>
 
@@ -140,21 +124,11 @@ onMounted(() => {
         <div class="title-block">
           <h1>Documents</h1>
           <p v-if="auth.state.user" class="subtitle">
-            {{ docs.length }} document(s) - session: {{ tokenStatus }}
+            {{ docs.length }} document(s)
           </p>
         </div>
 
-        <div class="user-panel" v-if="auth.state.user">
-          <div class="avatar-wrap">
-            <img v-if="auth.state.user.avatarUrl" :src="auth.state.user.avatarUrl" :alt="auth.state.user.displayName" />
-            <span v-else>{{ getInitials() }}</span>
-          </div>
-          <div class="user-meta">
-            <strong>{{ auth.state.user.displayName }}</strong>
-            <small>{{ auth.state.user.email }}</small>
-          </div>
-          <button type="button" class="ghost-btn" @click="logout">Deconnexion</button>
-        </div>
+        <UserAccountMenu />
       </header>
 
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
@@ -236,66 +210,6 @@ onMounted(() => {
   margin: 4px 0 0;
   color: #64748b;
   font: 500 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.user-panel {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 6px 8px;
-  background: #f8fafc;
-}
-
-.avatar-wrap {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #eff6ff;
-  color: #1e3a8a;
-  font: 700 0.72rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.avatar-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-meta {
-  display: grid;
-  gap: 2px;
-}
-
-.user-meta strong {
-  color: #0f172a;
-  font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.user-meta small {
-  color: #64748b;
-  font: 500 0.68rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-.ghost-btn {
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  height: 30px;
-  padding: 0 10px;
-  background: #ffffff;
-  color: #334155;
-  font: 600 0.72rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-  cursor: pointer;
-}
-
-.ghost-btn:hover {
-  background: #f1f5f9;
 }
 
 .error-banner {
