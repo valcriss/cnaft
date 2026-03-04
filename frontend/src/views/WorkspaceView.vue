@@ -38,6 +38,7 @@ const documentId = computed(() => {
   const id = route.params.id;
   return typeof id === "string" && id.trim().length > 0 ? id : null;
 });
+const shouldShowDocumentLoading = computed(() => Boolean(documentId.value) && isLoadingDocument.value);
 
 const queryUsername = computed(() => {
   const q = route.query.username;
@@ -175,7 +176,10 @@ async function joinByShareTokenFromUrl() {
 
 async function loadDocument() {
   const id = documentId.value;
-  if (!id) return;
+  if (!id) {
+    isLoadingDocument.value = false;
+    return;
+  }
   const requestSeq = ++loadRequestSeq;
   isLoadingDocument.value = true;
   canvasStore.replaceDocumentState({
@@ -453,7 +457,7 @@ function goDashboard() {
 
     <div class="workspace-content">
       <CanvasWorkspace
-        v-show="!isLoadingDocument"
+        v-show="!shouldShowDocumentLoading"
         :title="workspaceTitle"
         :username="workspaceUsername"
         :user-avatar="workspaceUserAvatar"
@@ -463,7 +467,7 @@ function goDashboard() {
         timer-sound-ogg="/sound/alarm.ogg"
         @title-commit="saveTitle"
       />
-      <div v-if="isLoadingDocument" class="canvas-loading">
+      <div v-if="shouldShowDocumentLoading" class="canvas-loading">
         Chargement du document...
       </div>
     </div>
