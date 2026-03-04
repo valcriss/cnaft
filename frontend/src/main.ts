@@ -8,6 +8,7 @@ import {
   faSquare as faSquareRegular,
   faNoteSticky as faNoteStickyRegular,
   faAlarmClock as faAlarmClockRegular,
+  faFolder as faFolderRegular,
 } from "@fortawesome/free-regular-svg-icons";
 import {
   faArrowPointer,
@@ -64,6 +65,13 @@ import {
   faEllipsisVertical,
   faBoxArchive,
   faPenToSquare,
+  faChevronLeft,
+  faChevronRight,
+  faFile,
+  faFolder,
+  faFolderMinus,
+  faFolderPlus,
+  faCirclePlus,
 } from "@fortawesome/free-solid-svg-icons";
 import App from "./App.vue";
 import router from "./router";
@@ -74,6 +82,7 @@ library.add(
   faSquareRegular,
   faNoteStickyRegular,
   faAlarmClockRegular,
+  faFolderRegular,
   faUndo,
   faRedo,
   faMagnifyingGlassMinus,
@@ -126,6 +135,13 @@ library.add(
   faEllipsisVertical,
   faBoxArchive,
   faPenToSquare,
+  faChevronLeft,
+  faChevronRight,
+  faFile,
+  faFolder,
+  faFolderMinus,
+  faFolderPlus,
+  faCirclePlus,
 );
 
 createApp(App).use(router).component("font-awesome-icon", FontAwesomeIcon).mount("#app");

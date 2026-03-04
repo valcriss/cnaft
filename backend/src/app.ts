@@ -6,6 +6,7 @@ import fs from "node:fs";
 import { config } from "./config.js";
 import authRouter from "./routes/auth.js";
 import documentsRouter from "./routes/documents.js";
+import foldersRouter from "./routes/folders.js";
 import { requireAuth } from "./middleware/auth.js";
 
 export function createApp() {
@@ -32,6 +33,7 @@ export function createApp() {
 
   app.use("/api/auth", authRouter);
   app.use("/api/documents", requireAuth, documentsRouter);
+  app.use("/api/folders", requireAuth, foldersRouter);
 
   if (config.FRONTEND_DIST_DIR) {
     const distDir = path.resolve(config.FRONTEND_DIST_DIR);

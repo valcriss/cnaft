@@ -31,6 +31,11 @@ type ListedDocument = {
   ownerId: string;
 };
 
+type FolderPreference = {
+  documentId: string;
+  folderId: string | null;
+};
+
 type Membership = {
   documentId: string;
   role: string;
@@ -57,6 +62,9 @@ const archiveSchema = z.object({
 });
 const renameTitleSchema = z.object({
   title: z.string().trim().min(1).max(120),
+});
+const updateFolderSchema = z.object({
+  folderId: z.string().min(1).nullable(),
 });
 
 router.get("/", async (req, res) => {
@@ -109,12 +117,26 @@ router.get("/", async (req, res) => {
       })
     : [];
   const archivedByDocId = new Set(archivedPrefs.map((pref) => pref.documentId));
+  const folderPrefs = documentIds.length
+    ? ((await prisma.documentFolderPreference.findMany({
+        where: {
+          userId,
+          documentId: { in: documentIds },
+        },
+        select: {
+          documentId: true,
+          folderId: true,
+        },
+      })) as FolderPreference[])
+    : [];
+  const folderIdByDocument = new Map(folderPrefs.map((pref) => [pref.documentId, pref.folderId] as const));
 
   const documents = baseDocuments
     .filter((doc) => includeArchived || !archivedByDocId.has(doc.id))
     .map((doc) => ({
       ...doc,
       archivedByCurrentUser: archivedByDocId.has(doc.id),
+      folderId: folderIdByDocument.get(doc.id) ?? null,
     }));
 
   res.json({ documents });
@@ -259,6 +281,54 @@ router.patch("/:id/archive", async (req, res) => {
   }
 
   res.json({ ok: true, archived: parsed.data.archived });
+});
+
+router.patch("/:id/folder", async (req, res) => {
+  const role = await getDocumentRole(req.params.id, req.auth!.userId);
+  if (!canRead(role)) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+
+  const parsed = updateFolderSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const folderId = parsed.data.folderId;
+  if (folderId) {
+    const folder = await prisma.folder.findFirst({
+      where: {
+        id: folderId,
+        userId: req.auth!.userId,
+      },
+      select: { id: true },
+    });
+    if (!folder) {
+      res.status(404).json({ error: "Folder not found" });
+      return;
+    }
+  }
+
+  await prisma.documentFolderPreference.upsert({
+    where: {
+      userId_documentId: {
+        userId: req.auth!.userId,
+        documentId: req.params.id,
+      },
+    },
+    create: {
+      userId: req.auth!.userId,
+      documentId: req.params.id,
+      folderId: folderId ?? null,
+    },
+    update: {
+      folderId: folderId ?? null,
+    },
+  });
+
+  res.json({ ok: true, folderId: folderId ?? null });
 });
 
 router.delete("/:id", async (req, res) => {
