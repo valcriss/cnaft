@@ -1,4 +1,7 @@
 import { createApp } from "vue";
+import "@fontsource/roboto/latin-400.css";
+import "@fontsource/roboto/latin-500.css";
+import "@fontsource/roboto/latin-700.css";
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import {
@@ -56,6 +59,11 @@ import {
   faThumbsUp,
   faCheck,
   faStop,
+  faUser,
+  faFilter,
+  faEllipsisVertical,
+  faBoxArchive,
+  faPenToSquare,
 } from "@fortawesome/free-solid-svg-icons";
 import App from "./App.vue";
 import router from "./router";
@@ -113,6 +121,11 @@ library.add(
   faThumbsUp,
   faCheck,
   faStop,
+  faUser,
+  faFilter,
+  faEllipsisVertical,
+  faBoxArchive,
+  faPenToSquare,
 );
 
 createApp(App).use(router).component("font-awesome-icon", FontAwesomeIcon).mount("#app");

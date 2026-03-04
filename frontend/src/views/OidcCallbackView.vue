@@ -58,6 +58,7 @@ onMounted(async () => {
   background: #ffffff;
   color: #334155;
   padding: 16px;
-  font: 600 0.92rem/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.92rem/1.4 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 </style>
+

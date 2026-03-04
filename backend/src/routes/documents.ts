@@ -52,9 +52,16 @@ const shareSchema = z.object({
   role: z.enum(["viewer", "editor"]).default("viewer"),
   expiresAt: z.string().datetime().optional(),
 });
+const archiveSchema = z.object({
+  archived: z.boolean(),
+});
+const renameTitleSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+});
 
 router.get("/", async (req, res) => {
   const userId = req.auth!.userId;
+  const includeArchived = req.query.includeArchived === "1";
   const owned = (await prisma.document.findMany({
     where: { ownerId: userId },
     orderBy: { updatedAt: "desc" },
@@ -86,10 +93,30 @@ router.get("/", async (req, res) => {
       })
     : [];
   const roleByDocument = new Map(memberships.map((m) => [m.documentId, m.role] as const));
-  const documents = [
+  const baseDocuments = [
     ...owned.map((d) => ({ ...d, role: "owner" as const })),
     ...shared.map((d) => ({ ...d, role: (roleByDocument.get(d.id) ?? "viewer") as "viewer" | "editor" })),
   ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+  const documentIds = baseDocuments.map((doc) => doc.id);
+  const archivedPrefs = documentIds.length
+    ? await prisma.documentArchivePreference.findMany({
+        where: {
+          userId,
+          documentId: { in: documentIds },
+        },
+        select: { documentId: true },
+      })
+    : [];
+  const archivedByDocId = new Set(archivedPrefs.map((pref) => pref.documentId));
+
+  const documents = baseDocuments
+    .filter((doc) => includeArchived || !archivedByDocId.has(doc.id))
+    .map((doc) => ({
+      ...doc,
+      archivedByCurrentUser: archivedByDocId.has(doc.id),
+    }));
+
   res.json({ documents });
 });
 
@@ -169,6 +196,69 @@ router.patch("/:id", async (req, res) => {
     data: updateData,
   });
   res.json({ document: updated });
+});
+
+router.patch("/:id/title", async (req, res) => {
+  const role = await getDocumentRole(req.params.id, req.auth!.userId);
+  if (role !== "owner") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const parsed = renameTitleSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const updated = await prisma.document.update({
+    where: { id: req.params.id },
+    data: { title: parsed.data.title },
+    select: { id: true, title: true, updatedAt: true },
+  });
+
+  res.json({ document: updated });
+});
+
+router.patch("/:id/archive", async (req, res) => {
+  const role = await getDocumentRole(req.params.id, req.auth!.userId);
+  if (!canRead(role)) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+
+  const parsed = archiveSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  if (parsed.data.archived) {
+    await prisma.documentArchivePreference.upsert({
+      where: {
+        documentId_userId: {
+          documentId: req.params.id,
+          userId: req.auth!.userId,
+        },
+      },
+      create: {
+        documentId: req.params.id,
+        userId: req.auth!.userId,
+      },
+      update: {
+        archivedAt: new Date(),
+      },
+    });
+  } else {
+    await prisma.documentArchivePreference.deleteMany({
+      where: {
+        documentId: req.params.id,
+        userId: req.auth!.userId,
+      },
+    });
+  }
+
+  res.json({ ok: true, archived: parsed.data.archived });
 });
 
 router.delete("/:id", async (req, res) => {

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useCanvasStore } from "../../stores/useCanvasStore";
 
 const props = withDefaults(
   defineProps<{
     title?: string;
+    titleEditable?: boolean;
   }>(),
   {
     title: "Canvas Notes",
+    titleEditable: false,
   },
 );
 
@@ -15,9 +17,11 @@ const canvas = useCanvasStore();
 const emits = defineEmits<{
   (event: "exportPng"): void;
   (event: "exportSvg"): void;
+  (event: "titleCommit", title: string): void;
 }>();
 
 const importInputRef = ref<HTMLInputElement | null>(null);
+const titleInputRef = ref<HTMLInputElement | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
 const timerMenuRef = ref<HTMLElement | null>(null);
 const voteMenuRef = ref<HTMLElement | null>(null);
@@ -27,6 +31,8 @@ const isMenuOpen = ref(false);
 const isTimerMenuOpen = ref(false);
 const isVoteMenuOpen = ref(false);
 const userMenuOpenFor = ref<string | null>(null);
+const isTitleEditing = ref(false);
+const editingTitle = ref(props.title);
 
 const timerMinutes = ref(5);
 const timerSeconds = ref(0);
@@ -143,6 +149,15 @@ const collabDebugRecentOps = computed(() =>
     label: `${row.direction.toUpperCase()} ${row.type}`,
     meta: `${row.clientId.slice(0, 6)} · ${row.seq ?? "-"} · ${new Date(row.at).toLocaleTimeString()}`,
   })),
+);
+
+watch(
+  () => props.title,
+  (value) => {
+    if (!isTitleEditing.value) {
+      editingTitle.value = value;
+    }
+  },
 );
 
 function roundZoom(value: number) {
@@ -425,6 +440,41 @@ function clearCollabDebug() {
   canvas.clearCollabDebugLog();
 }
 
+async function startTitleEdit() {
+  if (!props.titleEditable) return;
+  isTitleEditing.value = true;
+  editingTitle.value = props.title;
+  await nextTick();
+  titleInputRef.value?.focus();
+  titleInputRef.value?.select();
+}
+
+function cancelTitleEdit() {
+  isTitleEditing.value = false;
+  editingTitle.value = props.title;
+}
+
+function commitTitleEdit() {
+  const normalized = editingTitle.value.trim() || props.title;
+  isTitleEditing.value = false;
+  editingTitle.value = normalized;
+  if (normalized !== props.title) {
+    emits("titleCommit", normalized);
+  }
+}
+
+function onTitleInputKeyDown(event: KeyboardEvent) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    commitTitleEdit();
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cancelTitleEdit();
+  }
+}
+
 onMounted(() => {
   window.addEventListener("pointerdown", onWindowPointerDown);
   statusTickIntervalId = window.setInterval(() => {
@@ -443,7 +493,20 @@ onUnmounted(() => {
 
 <template>
   <header class="topbar">
-    <div class="brand">{{ props.title }}</div>
+    <div v-if="isTitleEditing && props.titleEditable" class="brand-edit-wrap">
+      <input
+        ref="titleInputRef"
+        v-model="editingTitle"
+        class="brand-input"
+        type="text"
+        maxlength="120"
+        @blur="commitTitleEdit"
+        @keydown="onTitleInputKeyDown"
+      />
+    </div>
+    <div v-else class="brand" :class="{ editable: props.titleEditable }" @dblclick="startTitleEdit">
+      {{ props.title }}
+    </div>
     <div class="right-controls">
       <div ref="usersRef" class="connected-users" aria-label="Utilisateurs connectes">
         <div
@@ -740,8 +803,29 @@ onUnmounted(() => {
 }
 
 .brand {
-  font: 600 0.95rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.95rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   color: #1f2328;
+}
+
+.brand.editable {
+  cursor: text;
+}
+
+.brand-edit-wrap {
+  width: min(380px, 40vw);
+  min-width: 180px;
+}
+
+.brand-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #0f172a;
+  font: 600 0.9rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #ffffff;
 }
 
 .actions {
@@ -790,7 +874,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font: 700 0.7rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 0.7rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .connected-user.user-btn {
@@ -906,7 +990,7 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 2px 8px;
   color: #475569;
-  font: 500 0.72rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   gap: 8px;
 }
 
@@ -926,7 +1010,7 @@ onUnmounted(() => {
   min-width: 56px;
   height: 24px;
   border-radius: 6px;
-  font: 600 0.68rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 8px;
 }
 
@@ -940,24 +1024,24 @@ onUnmounted(() => {
 
 .debug-log-empty {
   color: #94a3b8;
-  font: 500 0.68rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.68rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .debug-log-row {
   display: grid;
   gap: 2px;
   color: #334155;
-  font: 600 0.68rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.68rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .debug-log-row small {
   color: #64748b;
-  font: 500 0.64rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.64rem/1.1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .menu-label {
   color: #64748b;
-  font: 600 0.68rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 8px;
 }
 
@@ -976,7 +1060,7 @@ onUnmounted(() => {
   padding: 7px 8px;
   border-radius: 8px;
   color: #0f172a;
-  font: 500 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -1017,7 +1101,7 @@ onUnmounted(() => {
   border-radius: 6px;
   background: #f8fafc;
   color: #1f2328;
-  font: 700 0.9rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 0.9rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0;
   cursor: pointer;
   flex-shrink: 0;
@@ -1041,7 +1125,7 @@ onUnmounted(() => {
   background: #f8fafc;
   color: #0f172a;
   padding: 6px 8px;
-  font: 600 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .timer-input-row {
@@ -1054,7 +1138,7 @@ onUnmounted(() => {
   display: grid;
   gap: 4px;
   color: #64748b;
-  font: 600 0.68rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .timer-check {
@@ -1063,7 +1147,7 @@ onUnmounted(() => {
   gap: 8px;
   padding: 2px 2px 0;
   color: #475569;
-  font: 500 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .timer-actions {
@@ -1073,13 +1157,13 @@ onUnmounted(() => {
 
 .vote-capacity {
   color: #64748b;
-  font: 600 0.72rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 2px;
 }
 
 .vote-error {
   color: #b91c1c;
-  font: 600 0.72rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 2px;
 }
 
@@ -1090,7 +1174,7 @@ onUnmounted(() => {
   border-radius: 8px;
   background: #f8fafc;
   color: #0f172a;
-  font: 600 0.75rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.75rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -1102,7 +1186,7 @@ button {
   width: 36px;
   height: 34px;
   padding: 0;
-  font: 500 0.8rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.8rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -1130,3 +1214,4 @@ button:disabled {
   }
 }
 </style>
+

@@ -60,7 +60,7 @@ button {
   border-radius: 10px;
   background: #f6f8fa;
   color: #1f2328;
-  font: 600 0.78rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.78rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -84,3 +84,4 @@ button.active {
   }
 }
 </style>
+

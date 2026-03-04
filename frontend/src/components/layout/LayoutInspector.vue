@@ -68,7 +68,7 @@ function onStrokeInput(event: Event) {
   border-radius: 12px;
   padding: 12px;
   color: #1f2328;
-  font: 500 0.84rem/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.84rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 h2 {
@@ -117,3 +117,4 @@ button:disabled {
   }
 }
 </style>
+
