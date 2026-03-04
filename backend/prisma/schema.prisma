@@ -17,6 +17,7 @@ model User {
   updatedAt      DateTime         @updatedAt
   documents      Document[]
   documentAccess DocumentMember[]
+  archivedDocs   DocumentArchivePreference[]
 }
 
 model Document {
@@ -29,6 +30,7 @@ model Document {
   updatedAt     DateTime       @updatedAt
   members       DocumentMember[]
   shareLinks    DocumentShareLink[]
+  archivedPrefs DocumentArchivePreference[]
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -64,4 +66,18 @@ model DocumentShareLink {
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId, revokedAt])
+}
+
+model DocumentArchivePreference {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  archivedAt DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId, archivedAt])
+  @@index([documentId, userId])
 }

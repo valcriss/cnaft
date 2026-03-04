@@ -13,6 +13,7 @@ const props = withDefaults(
     userId?: string;
     timerSoundMp3?: string;
     timerSoundOgg?: string;
+    titleEditable?: boolean;
   }>(),
   {
     title: "Canvas Notes",
@@ -20,8 +21,12 @@ const props = withDefaults(
     userId: "",
     timerSoundMp3: "",
     timerSoundOgg: "",
+    titleEditable: false,
   },
 );
+const emits = defineEmits<{
+  (event: "titleCommit", title: string): void;
+}>();
 
 const stageRef = ref<InstanceType<typeof CanvasStage> | null>(null);
 const canvasStore = useCanvasStore();
@@ -49,12 +54,23 @@ function exportPng() {
 function exportSvg() {
   stageRef.value?.exportAsSvg();
 }
+
+function onTitleCommit(title: string) {
+  emits("titleCommit", title);
+}
 </script>
 
 <template>
   <main class="workspace">
     <LayoutSidebar class="workspace-sidebar" />
-    <LayoutTopbar class="workspace-topbar" :title="props.title" @export-png="exportPng" @export-svg="exportSvg" />
+    <LayoutTopbar
+      class="workspace-topbar"
+      :title="props.title"
+      :title-editable="props.titleEditable"
+      @title-commit="onTitleCommit"
+      @export-png="exportPng"
+      @export-svg="exportSvg"
+    />
     <CanvasStage ref="stageRef" class="workspace-canvas" />
   </main>
 </template>

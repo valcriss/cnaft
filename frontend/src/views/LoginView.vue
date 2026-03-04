@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ApiError, useAuthStore } from "../stores/useAuthStore";
@@ -162,12 +162,12 @@ async function startOidcLogin() {
 h1 {
   margin: 0;
   color: #0f172a;
-  font: 700 1.3rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 1.3rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .sub {
   margin: 0;
   color: #475569;
-  font: 500 0.9rem/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.9rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .switch {
   display: grid;
@@ -195,7 +195,7 @@ label {
 }
 label span {
   color: #475569;
-  font: 600 0.75rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.75rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 input {
   border: 1px solid #d1d5db;
@@ -209,7 +209,7 @@ input {
   background: #2563eb;
   color: #ffffff;
   height: 38px;
-  font: 600 0.86rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.86rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 .primary-btn:disabled {
@@ -219,6 +219,7 @@ input {
 .error {
   margin: 0;
   color: #b91c1c;
-  font: 600 0.8rem/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.8rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 </style>
+

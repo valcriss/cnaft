@@ -202,8 +202,14 @@ onUnmounted(() => {
     </button>
 
     <div v-if="isMenuOpen" class="user-menu" role="menu" aria-label="Menu utilisateur">
-      <button type="button" class="user-menu-item" @click="openProfile">Mon profil</button>
-      <button type="button" class="user-menu-item danger" @click="logout">Deconnexion</button>
+      <button type="button" class="user-menu-item" @click="openProfile">
+        <span class="menu-item-leading"><font-awesome-icon icon="user" /></span>
+        <span>Mon profil</span>
+      </button>
+      <button type="button" class="user-menu-item danger" @click="logout">
+        <span class="menu-item-leading"><font-awesome-icon icon="right-from-bracket" /></span>
+        <span>Deconnexion</span>
+      </button>
     </div>
   </div>
 
@@ -290,7 +296,7 @@ onUnmounted(() => {
   justify-content: center;
   background: #eff6ff;
   color: #1e3a8a;
-  font: 700 0.72rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 0.72rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .avatar-wrap img {
@@ -307,12 +313,12 @@ onUnmounted(() => {
 
 .user-meta strong {
   color: #0f172a;
-  font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .user-meta small {
   color: #64748b;
-  font: 500 0.68rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .user-menu {
@@ -331,6 +337,9 @@ onUnmounted(() => {
 }
 
 .user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   height: 32px;
   border: 0;
@@ -340,7 +349,14 @@ onUnmounted(() => {
   cursor: pointer;
   background: #ffffff;
   color: #1a3652;
-  font: 500 0.78rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 500 0.78rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.menu-item-leading {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  color: #64748b;
 }
 
 .user-menu-item:hover {
@@ -427,7 +443,7 @@ onUnmounted(() => {
   padding: 0 12px;
   background: #ffffff;
   color: #0f172a;
-  font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -464,7 +480,7 @@ onUnmounted(() => {
   background: #f8fafc;
   color: #0f172a;
   padding: 6px 8px;
-  font: 600 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .profileForm input[readonly] {
@@ -487,7 +503,7 @@ onUnmounted(() => {
   padding: 0 12px;
   background: #ffffff;
   color: #0f172a;
-  font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
@@ -528,3 +544,4 @@ onUnmounted(() => {
   }
 }
 </style>
+

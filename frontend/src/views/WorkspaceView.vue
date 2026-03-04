@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import UserAccountMenu from "../components/auth/UserAccountMenu.vue";
@@ -15,8 +15,7 @@ const route = useRoute();
 const router = useRouter();
 
 const workspaceTitle = ref("Mon Canvas");
-const titleInput = ref("Mon Canvas");
-const isLoadingDocument = ref(false);
+const isLoadingDocument = ref(true);
 const isSavingTitle = ref(false);
 const documentRole = ref<"owner" | "editor" | "viewer">("viewer");
 
@@ -30,8 +29,8 @@ const shareUrl = ref("");
 let cleanupAdapter: (() => void) | null = null;
 let beforeUnloadHandler: (() => void) | null = null;
 let saveTimer: number | null = null;
-let titleSaveTimer: number | null = null;
 let savingInProgress = false;
+let loadRequestSeq = 0;
 const THUMB_WIDTH = 320;
 const THUMB_HEIGHT = 180;
 
@@ -177,7 +176,15 @@ async function joinByShareTokenFromUrl() {
 async function loadDocument() {
   const id = documentId.value;
   if (!id) return;
+  const requestSeq = ++loadRequestSeq;
   isLoadingDocument.value = true;
+  canvasStore.replaceDocumentState({
+    elements: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    gridSize: 24,
+    showGrid: true,
+    snapToGrid: false,
+  });
   try {
     const data = await auth.apiRequest<{
       document: {
@@ -186,9 +193,9 @@ async function loadDocument() {
       };
       role: "owner" | "editor" | "viewer";
     }>(`/documents/${id}`, { auth: true });
+    if (requestSeq !== loadRequestSeq) return;
 
     workspaceTitle.value = data.document.title || "Mon Canvas";
-    titleInput.value = workspaceTitle.value;
     documentRole.value = data.role;
 
     if (isCanvasDocumentState(data.document.contentJson)) {
@@ -202,12 +209,15 @@ async function loadDocument() {
       });
     }
   } catch {
+    if (requestSeq !== loadRequestSeq) return;
     window.alert("Impossible de charger le document.");
     router.replace("/dashboard");
   } finally {
-    window.setTimeout(() => {
-      isLoadingDocument.value = false;
-    }, 0);
+    if (requestSeq === loadRequestSeq) {
+      window.setTimeout(() => {
+        isLoadingDocument.value = false;
+      }, 0);
+    }
   }
 }
 
@@ -268,11 +278,11 @@ function buildThumbnailSvg() {
   ].join("");
 }
 
-async function saveTitle(force = false) {
+async function saveTitle(nextValue: string) {
   const id = documentId.value;
   if (!id) return;
-  const nextTitle = titleInput.value.trim() || "Mon Canvas";
-  if (!force && nextTitle === workspaceTitle.value) return;
+  const nextTitle = nextValue.trim() || "Mon Canvas";
+  if (nextTitle === workspaceTitle.value) return;
   isSavingTitle.value = true;
   try {
     await auth.apiRequest(`/documents/${id}`, {
@@ -339,19 +349,6 @@ async function copyShareUrl() {
 }
 
 watch(
-  () => titleInput.value,
-  () => {
-    if (!documentId.value || isLoadingDocument.value) return;
-    if (titleSaveTimer !== null) {
-      window.clearTimeout(titleSaveTimer);
-    }
-    titleSaveTimer = window.setTimeout(() => {
-      saveTitle();
-    }, 500);
-  },
-);
-
-watch(
   () => canvasStore.state.revision,
   () => {
     if (!documentId.value || isLoadingDocument.value) return;
@@ -392,12 +389,17 @@ onMounted(async () => {
   await loadDocument();
 });
 
+watch(
+  () => route.params.id,
+  async (nextId, prevId) => {
+    if (nextId === prevId) return;
+    await loadDocument();
+  },
+);
+
 onUnmounted(() => {
   if (saveTimer !== null) {
     window.clearTimeout(saveTimer);
-  }
-  if (titleSaveTimer !== null) {
-    window.clearTimeout(titleSaveTimer);
   }
   cleanupAdapter?.();
   cleanupAdapter = null;
@@ -443,28 +445,28 @@ function goDashboard() {
         >
           Partager
         </button>
-        <input
-          v-model="titleInput"
-          class="title-input"
-          type="text"
-          maxlength="120"
-          @blur="saveTitle(true)"
-        />
-        <small v-if="isSavingTitle" class="muted">Sauvegarde titre...</small>
       </div>
       <div class="right-actions">
         <UserAccountMenu />
       </div>
     </header>
 
-    <CanvasWorkspace
-      :title="workspaceTitle"
-      :username="workspaceUsername"
-      :user-avatar="workspaceUserAvatar"
-      :user-id="workspaceUserId"
-      timer-sound-mp3="/sound/alarm.mp3"
-      timer-sound-ogg="/sound/alarm.ogg"
-    />
+    <div class="workspace-content">
+      <CanvasWorkspace
+        v-show="!isLoadingDocument"
+        :title="workspaceTitle"
+        :username="workspaceUsername"
+        :user-avatar="workspaceUserAvatar"
+        :user-id="workspaceUserId"
+        :title-editable="documentRole !== 'viewer'"
+        timer-sound-mp3="/sound/alarm.mp3"
+        timer-sound-ogg="/sound/alarm.ogg"
+        @title-commit="saveTitle"
+      />
+      <div v-if="isLoadingDocument" class="canvas-loading">
+        Chargement du document...
+      </div>
+    </div>
 
     <div v-if="shareOpen" class="share-overlay" @click.self="closeShareDialog">
       <section class="share-modal">
@@ -524,23 +526,27 @@ function goDashboard() {
   padding: 0 12px;
 }
 
+.workspace-content {
+  position: relative;
+  min-height: 0;
+}
+
+.canvas-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(241, 245, 249, 0.9);
+  color: #334155;
+  font: 600 0.84rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 .left-actions,
 .right-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.title-input {
-  width: min(420px, 48vw);
-  max-width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  height: 32px;
-  padding: 0 10px;
-  color: #0f172a;
-  font: 600 0.84rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .ghost-btn {
@@ -550,13 +556,8 @@ function goDashboard() {
   height: 32px;
   padding: 0 10px;
   color: #334155;
-  font: 600 0.76rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
-}
-
-.muted {
-  color: #64748b;
-  font: 500 0.7rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .share-overlay {
@@ -581,7 +582,7 @@ function goDashboard() {
 .share-modal h3 {
   margin: 0;
   color: #0f172a;
-  font: 700 1rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 1rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .share-field {
@@ -591,7 +592,7 @@ function goDashboard() {
 
 .share-field span {
   color: #475569;
-  font: 600 0.74rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.74rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .share-field select,
@@ -617,7 +618,7 @@ function goDashboard() {
 .share-error {
   margin: 0;
   color: #b91c1c;
-  font: 600 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 600 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .share-url-wrap {
@@ -631,3 +632,4 @@ function goDashboard() {
   justify-content: flex-end;
 }
 </style>
+
