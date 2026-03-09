@@ -145,28 +145,27 @@ async function startOidcLogin() {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 20% 20%, #e0f2fe 0%, #f8fafc 40%, #eef2ff 100%);
+  background: radial-gradient(circle at 20% 20%, var(--page-accent-auth-1) 0%, var(--color-bg-app) 40%, var(--page-accent-auth-2) 100%);
   padding: 20px;
-  box-sizing: border-box;
 }
 .login-card {
   width: min(420px, 100%);
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 22px 44px rgba(2, 6, 23, 0.08);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-soft);
   padding: 20px;
   display: grid;
   gap: 12px;
 }
 h1 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1.3rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .sub {
   margin: 0;
-  color: #475569;
+  color: var(--color-text-muted);
   font: 500 0.9rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .switch {
@@ -175,15 +174,17 @@ h1 {
   gap: 8px;
 }
 .switch button {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
   height: 34px;
   cursor: pointer;
 }
 .switch button.active {
-  border-color: #2563eb;
-  background: #dbeafe;
+  border-color: var(--color-primary);
+  background: var(--color-bg-selected);
+  color: var(--color-text-primary);
 }
 .form {
   display: grid;
@@ -194,23 +195,28 @@ label {
   gap: 4px;
 }
 label span {
-  color: #475569;
+  color: var(--color-text-secondary);
   font: 600 0.75rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 input {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
   height: 36px;
   padding: 0 10px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
 }
 .primary-btn {
-  border: 1px solid #1d4ed8;
+  border: 1px solid var(--color-primary-strong);
   border-radius: 10px;
-  background: #2563eb;
+  background: var(--color-button-primary-bg);
   color: #ffffff;
   height: 38px;
   font: 600 0.86rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
+}
+.primary-btn:hover:not(:disabled) {
+  background: var(--color-button-primary-hover);
 }
 .primary-btn:disabled {
   opacity: 0.6;
@@ -218,7 +224,7 @@ input {
 }
 .error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-text-danger);
   font: 600 0.8rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 </style>

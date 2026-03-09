@@ -16,6 +16,7 @@ import type {
   TextTransformMode,
 } from "../../stores/useCanvasStore";
 import { useCanvasStore } from "../../stores/useCanvasStore";
+import { useThemeStore } from "../../stores/useThemeStore";
 import { getElementBounds, type Rect } from "../../domain/elements";
 import { getLinePolyline, getLineSegments } from "../../domain/lineGeometry";
 import { getElementCapabilities } from "../../domain/elementCapabilities";
@@ -27,8 +28,45 @@ import {
 } from "../../config/contextMenuActions";
 
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
+type CanvasRenderMode = "display" | "export";
+type CanvasRenderTheme = {
+  isDark: boolean;
+  background: string;
+  grid: string;
+  imagePlaceholderBg: string;
+  imagePlaceholderText: string;
+  textFallbackDark: string;
+  textFallbackLight: string;
+  editorSurface: string;
+  editorBorder: string;
+};
+
+const LIGHT_CANVAS_RENDER_THEME: CanvasRenderTheme = {
+  isDark: false,
+  background: "#ffffff",
+  grid: "#eef2f6",
+  imagePlaceholderBg: "#f8fafc",
+  imagePlaceholderText: "#94a3b8",
+  textFallbackDark: "#0f172a",
+  textFallbackLight: "#f8fafc",
+  editorSurface: "#ffffff",
+  editorBorder: "#93c5fd",
+};
+
+const DARK_CANVAS_RENDER_THEME: CanvasRenderTheme = {
+  isDark: true,
+  background: "#1f1f1f",
+  grid: "rgba(255, 255, 255, 0.08)",
+  imagePlaceholderBg: "#242424",
+  imagePlaceholderText: "#cbd5e1",
+  textFallbackDark: "#0f172a",
+  textFallbackLight: "#f8fafc",
+  editorSurface: "rgba(24, 24, 24, 0.96)",
+  editorBorder: "#5f5f5f",
+};
 
 const canvasStore = useCanvasStore();
+const themeStore = useThemeStore();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const editorRef = ref<HTMLTextAreaElement | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
@@ -224,11 +262,22 @@ const textEditor = ref<{
   text: string;
 } | null>(null);
 
+const isCanvasDark = computed(() => themeStore.state.resolvedTheme === "dark");
+
 const textEditorStyle = computed(() => {
   const editor = textEditor.value;
   if (!editor) return {};
 
   const { zoom, x, y } = canvasStore.state.viewport;
+  const renderTheme = getCanvasRenderTheme("display");
+  const editedElement = canvasStore.state.elements.find((element) => element.id === editor.id) ?? null;
+  const backgroundColor =
+    editor.type === "text"
+      ? renderTheme.editorSurface
+      : editedElement && (editedElement.type === "note" || editedElement.type === "envelope")
+        ? resolveRenderBackgroundColor(editedElement.fill, renderTheme.background)
+        : renderTheme.editorSurface;
+  const textColor = getReadableRenderTextColor(editor.textColor, backgroundColor, renderTheme);
 
   return {
     left: `${editor.x * zoom + x}px`,
@@ -236,7 +285,7 @@ const textEditorStyle = computed(() => {
     width: `${Math.max(80, editor.width * zoom)}px`,
     height: `${Math.max(30, editor.height * zoom)}px`,
     fontSize: `${editor.fontSize}px`,
-    color: editor.textColor,
+    color: textColor,
     fontFamily: editor.fontFamily,
     textAlign: editor.textAlign,
     fontWeight: editor.bold ? "700" : "500",
@@ -245,6 +294,8 @@ const textEditorStyle = computed(() => {
     lineHeight: `${editor.lineHeight}`,
     letterSpacing: `${editor.letterSpacing}px`,
     textTransform: editor.textTransform,
+    background: backgroundColor,
+    borderColor: renderTheme.editorBorder,
   };
 });
 
@@ -492,10 +543,14 @@ function notifyLockedByRemote(elementId: string) {
   window.alert(`Element verrouille par ${lock.username}.`);
 }
 
-function drawImageElement(ctx: CanvasRenderingContext2D, element: Extract<CanvasElement, { type: "image" }>) {
+function drawImageElement(
+  ctx: CanvasRenderingContext2D,
+  element: Extract<CanvasElement, { type: "image" }>,
+  renderTheme: CanvasRenderTheme,
+) {
   if (!element.src) {
     ctx.save();
-    ctx.fillStyle = "#f8fafc";
+    ctx.fillStyle = renderTheme.imagePlaceholderBg;
     ctx.fillRect(element.x, element.y, element.width, element.height);
     ctx.restore();
     return;
@@ -519,9 +574,9 @@ function drawImageElement(ctx: CanvasRenderingContext2D, element: Extract<Canvas
   }
 
   ctx.save();
-  ctx.fillStyle = "#f8fafc";
+  ctx.fillStyle = renderTheme.imagePlaceholderBg;
   ctx.fillRect(element.x, element.y, element.width, element.height);
-  ctx.fillStyle = "#94a3b8";
+  ctx.fillStyle = renderTheme.imagePlaceholderText;
   ctx.font = "500 12px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -856,6 +911,159 @@ function getEnvelopeMembershipCount(elementId: string) {
 function getLocalReactionActorKey() {
   const key = (canvasStore.state.localIdentity.userKey || "").trim();
   return key || canvasStore.state.clientId;
+}
+
+type ParsedColor = { r: number; g: number; b: number; a: number };
+
+function getCanvasRenderTheme(mode: CanvasRenderMode): CanvasRenderTheme {
+  if (mode === "display" && isCanvasDark.value) {
+    return DARK_CANVAS_RENDER_THEME;
+  }
+  return LIGHT_CANVAS_RENDER_THEME;
+}
+
+function clampColorChannel(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function parseCssColor(color: string): ParsedColor | null {
+  const value = color.trim().toLowerCase();
+  if (!value) return null;
+  if (value === "transparent") {
+    return { r: 0, g: 0, b: 0, a: 0 };
+  }
+
+  const hex = parseHexColor(color);
+  if (hex) {
+    return { ...hex, a: 1 };
+  }
+
+  const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/);
+  if (!rgbMatch) return null;
+  const parts = rgbMatch[1]?.split(",").map((part) => part.trim()) ?? [];
+  if (parts.length < 3) return null;
+
+  const [rRaw, gRaw, bRaw, aRaw] = parts;
+  const r = Number(rRaw);
+  const g = Number(gRaw);
+  const b = Number(bRaw);
+  const a = typeof aRaw === "string" ? Number(aRaw) : 1;
+  if ([r, g, b, a].some((channel) => Number.isNaN(channel))) return null;
+
+  return {
+    r: clampColorChannel(r),
+    g: clampColorChannel(g),
+    b: clampColorChannel(b),
+    a: Math.max(0, Math.min(1, a)),
+  };
+}
+
+function blendColors(foreground: ParsedColor, background: ParsedColor): ParsedColor {
+  const alpha = foreground.a + background.a * (1 - foreground.a);
+  if (alpha <= 0) {
+    return { r: 0, g: 0, b: 0, a: 0 };
+  }
+  return {
+    r: clampColorChannel((foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha),
+    g: clampColorChannel((foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha),
+    b: clampColorChannel((foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha),
+    a: alpha,
+  };
+}
+
+function resolveOpaqueColor(color: string, fallbackBackground: string) {
+  const parsed = parseCssColor(color);
+  const background = parseCssColor(fallbackBackground);
+  if (!parsed || !background) return null;
+  if (parsed.a >= 1) return parsed;
+  return blendColors(parsed, background);
+}
+
+function relativeLuminance(color: ParsedColor) {
+  const toLinear = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * toLinear(color.r) + 0.7152 * toLinear(color.g) + 0.0722 * toLinear(color.b);
+}
+
+function getContrastRatio(foreground: ParsedColor, background: ParsedColor) {
+  const fg = relativeLuminance(foreground);
+  const bg = relativeLuminance(background);
+  const lighter = Math.max(fg, bg);
+  const darker = Math.min(fg, bg);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function isTransparentColor(color: string) {
+  const parsed = parseCssColor(color);
+  return !parsed || parsed.a <= 0;
+}
+
+function resolveRenderBackgroundColor(color: string, canvasBackground: string) {
+  return isTransparentColor(color) ? canvasBackground : color;
+}
+
+function getReadableRenderTextColor(color: string, background: string, renderTheme: CanvasRenderTheme) {
+  const resolvedBackground = resolveOpaqueColor(background, renderTheme.background);
+  const resolvedForeground = resolveOpaqueColor(color, background);
+  if (!resolvedBackground || !resolvedForeground) return color;
+  if (getContrastRatio(resolvedForeground, resolvedBackground) >= 4.5) {
+    return color;
+  }
+  return relativeLuminance(resolvedBackground) < 0.35
+    ? renderTheme.textFallbackLight
+    : renderTheme.textFallbackDark;
+}
+
+function getRenderedElementForTheme<T extends CanvasElement>(element: T, renderTheme: CanvasRenderTheme): T {
+  if (!renderTheme.isDark) return element;
+
+  if (element.type === "rectangle" || element.type === "image") {
+    const nextStroke = getReadableRenderTextColor(element.stroke, renderTheme.background, renderTheme);
+    if (nextStroke === element.stroke) return element;
+    return {
+      ...element,
+      stroke: nextStroke,
+    } as T;
+  }
+
+  if (element.type === "text") {
+    const nextFill = getReadableRenderTextColor(element.fill, renderTheme.background, renderTheme);
+    if (nextFill === element.fill) return element;
+    return {
+      ...element,
+      fill: nextFill,
+      stroke: element.stroke === element.fill ? nextFill : element.stroke,
+    } as T;
+  }
+
+  if (element.type === "note" || element.type === "envelope") {
+    const background = resolveRenderBackgroundColor(element.fill, renderTheme.background);
+    const currentTextColor = element.textColor ?? "#1f2937";
+    const nextTextColor = getReadableRenderTextColor(currentTextColor, background, renderTheme);
+    const nextStroke = getReadableRenderTextColor(element.stroke, renderTheme.background, renderTheme);
+    if (nextTextColor === currentTextColor && nextStroke === element.stroke) return element;
+    return {
+      ...element,
+      stroke: nextStroke,
+      textColor: nextTextColor,
+    } as T;
+  }
+
+  if (element.type === "line") {
+    const nextStroke = getReadableRenderTextColor(element.stroke, renderTheme.background, renderTheme);
+    const background = resolveRenderBackgroundColor(element.labelBg, renderTheme.background);
+    const nextLabelColor = getReadableRenderTextColor(element.labelColor, background, renderTheme);
+    if (nextStroke === element.stroke && nextLabelColor === element.labelColor) return element;
+    return {
+      ...element,
+      stroke: nextStroke,
+      labelColor: nextLabelColor,
+    } as T;
+  }
+
+  return element;
 }
 
 function parseHexColor(color: string) {
@@ -1402,13 +1610,18 @@ function hitTest(worldX: number, worldY: number): CanvasElement | null {
   return null;
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number) {
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  renderTheme: CanvasRenderTheme,
+) {
   if (!canvasStore.state.showGrid) return;
   const { x, y, zoom } = canvasStore.state.viewport;
   const worldSpacing = gridSizeWorld();
   const spacing = worldSpacing * zoom;
 
-  ctx.strokeStyle = "#eef2f6";
+  ctx.strokeStyle = renderTheme.grid;
   ctx.lineWidth = 1;
 
   const startX = ((x % spacing) + spacing) % spacing;
@@ -1810,27 +2023,22 @@ function drawNoteReactions(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function render() {
-  const canvas = canvasRef.value;
-  if (!canvas) return;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const dpr = window.devicePixelRatio || 1;
-
-  canvas.width = Math.floor(width * dpr);
-  canvas.height = Math.floor(height * dpr);
+function renderScene(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  options: { mode: CanvasRenderMode; dpr: number; includeUiOverlays?: boolean },
+) {
+  const { mode, dpr, includeUiOverlays = mode === "display" } = options;
+  const renderTheme = getCanvasRenderTheme(mode);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width * dpr, height * dpr);
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = renderTheme.background;
   ctx.fillRect(0, 0, width, height);
 
-  drawGrid(ctx, width, height);
+  drawGrid(ctx, width, height, renderTheme);
 
   const { zoom, x, y } = canvasStore.state.viewport;
   ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * x, dpr * y);
@@ -1839,69 +2047,73 @@ function render() {
     (element): element is Extract<CanvasElement, { type: "envelope" }> => element.type === "envelope",
   );
   for (const envelope of envelopes) {
+    const renderedEnvelope = getRenderedElementForTheme(envelope, renderTheme);
     ctx.save();
-    ctx.fillStyle = envelope.fill;
-    drawEnvelopePath(ctx, envelope);
+    ctx.fillStyle = renderedEnvelope.fill;
+    drawEnvelopePath(ctx, renderedEnvelope);
     ctx.fill();
 
     ctx.lineWidth = 2;
-    ctx.strokeStyle = envelope.stroke;
-    if (envelope.strokeStyle === "dashed") {
+    ctx.strokeStyle = renderedEnvelope.stroke;
+    if (renderedEnvelope.strokeStyle === "dashed") {
       ctx.setLineDash([10, 6]);
-    } else if (envelope.strokeStyle === "dotted") {
+    } else if (renderedEnvelope.strokeStyle === "dotted") {
       ctx.setLineDash([2, 5]);
     } else {
       ctx.setLineDash([]);
     }
-    drawEnvelopePath(ctx, envelope);
+    drawEnvelopePath(ctx, renderedEnvelope);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const titleRect = getEnvelopeTitleRect(envelope);
-    const fontWeight = envelope.bold ? 700 : 500;
-    const fontStyle = envelope.italic ? "italic" : "normal";
-    const fontSize = envelope.fontSize ?? 18;
-    const fontFamily = envelope.fontFamily ?? "system-ui";
-    ctx.fillStyle = envelope.fill;
+    const titleRect = getEnvelopeTitleRect(renderedEnvelope);
+    const fontWeight = renderedEnvelope.bold ? 700 : 500;
+    const fontStyle = renderedEnvelope.italic ? "italic" : "normal";
+    const fontSize = renderedEnvelope.fontSize ?? 18;
+    const fontFamily = renderedEnvelope.fontFamily ?? "system-ui";
+    ctx.fillStyle = renderedEnvelope.fill;
     drawRoundedRect(ctx, titleRect.x, titleRect.y, titleRect.width, titleRect.height, 8);
     ctx.fill();
-    ctx.strokeStyle = envelope.stroke;
+    ctx.strokeStyle = renderedEnvelope.stroke;
     ctx.lineWidth = 1;
     drawRoundedRect(ctx, titleRect.x, titleRect.y, titleRect.width, titleRect.height, 8);
     ctx.stroke();
 
-    ctx.fillStyle = envelope.textColor ?? "#0f172a";
+    ctx.fillStyle = renderedEnvelope.textColor ?? renderTheme.textFallbackDark;
     ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
     ctx.textBaseline = "top";
     drawWrappedText(
       ctx,
-      envelope.text ?? "Enveloppe",
+      renderedEnvelope.text ?? "Enveloppe",
       titleRect.x + 8,
       titleRect.y + 6,
       Math.max(20, titleRect.width - 16),
       Math.max(24, titleRect.height - 10),
-      fontSize * (envelope.lineHeight ?? 1.2),
-      envelope.textAlign ?? "right",
-      envelope.textVerticalAlign ?? "top",
-      envelope.underline ?? false,
-      envelope.letterSpacing ?? 0,
-      envelope.textTransform ?? "none",
+      fontSize * (renderedEnvelope.lineHeight ?? 1.2),
+      renderedEnvelope.textAlign ?? "right",
+      renderedEnvelope.textVerticalAlign ?? "top",
+      renderedEnvelope.underline ?? false,
+      renderedEnvelope.letterSpacing ?? 0,
+      renderedEnvelope.textTransform ?? "none",
     );
     ctx.restore();
   }
 
   for (const element of canvasStore.state.elements) {
     if (element.type === "envelope") continue;
-    renderCanvasElement(ctx, element, {
+    const renderedElement = getRenderedElementForTheme(element, renderTheme);
+    renderCanvasElement(ctx, renderedElement, {
       getNoteFontSize,
       drawRoundedRect,
       drawWrappedText,
-      drawImageElement,
+      drawImageElement: (imageCtx, imageElement) => drawImageElement(imageCtx, imageElement, renderTheme),
       getLinePathPoints,
     });
   }
 
   drawNoteReactions(ctx);
+
+  if (!includeUiOverlays) return;
 
   const hasEditableLineSelection = selectedElements.value.some(
     (element) => element.type === "line" && !element.locked,
@@ -1957,6 +2169,23 @@ function render() {
     );
     drawMarquee(ctx, envelopeRect);
   }
+}
+
+function render() {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+
+  renderScene(ctx, width, height, { mode: "display", dpr });
 }
 
 function beginPan(clientX: number, clientY: number) {
@@ -3611,6 +3840,7 @@ function setVoteResultCanvasRef(elementId: string, canvas: HTMLCanvasElement | n
 
 function drawVoteResultPreviews() {
   if (!canvasStore.state.voteResultsVisible) return;
+  const previewTheme = getCanvasRenderTheme("display");
   for (const row of voteResultRows.value) {
     const preview = voteResultCanvasRefs.get(row.id);
     if (!preview) continue;
@@ -3622,25 +3852,26 @@ function drawVoteResultPreviews() {
     preview.width = width;
     preview.height = height;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = previewTheme.background;
     ctx.fillRect(0, 0, width, height);
 
     const element = canvasStore.state.elements.find((item) => item.id === row.id);
     if (!element) continue;
 
     if (element.type === "note") {
-      ctx.fillStyle = element.fill;
+      const renderedNote = getRenderedElementForTheme(element, previewTheme);
+      ctx.fillStyle = renderedNote.fill;
       drawRoundedRect(ctx, 8, 8, width - 16, height - 16, 10);
       ctx.fill();
-      ctx.strokeStyle = element.stroke;
+      ctx.strokeStyle = renderedNote.stroke;
       ctx.lineWidth = 2;
       drawRoundedRect(ctx, 8, 8, width - 16, height - 16, 10);
       ctx.stroke();
-      ctx.fillStyle = element.textColor ?? "#0f172a";
+      ctx.fillStyle = renderedNote.textColor ?? previewTheme.textFallbackDark;
       ctx.font = "600 12px system-ui";
       ctx.textBaseline = "middle";
       ctx.textAlign = "center";
-      const text = (element.text || "Note").slice(0, 18);
+      const text = (renderedNote.text || "Note").slice(0, 18);
       ctx.fillText(text, width / 2, height / 2);
       continue;
     }
@@ -3650,10 +3881,10 @@ function drawVoteResultPreviews() {
       if (cached && cached.complete) {
         ctx.drawImage(cached, 8, 8, width - 16, height - 16);
       } else {
-        ctx.fillStyle = "#f1f5f9";
+        ctx.fillStyle = previewTheme.imagePlaceholderBg;
         ctx.fillRect(8, 8, width - 16, height - 16);
       }
-      ctx.strokeStyle = "#cbd5e1";
+      ctx.strokeStyle = previewTheme.grid;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(8, 8, width - 16, height - 16);
     }
@@ -3669,11 +3900,34 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
+function createRenderedExportCanvas() {
+  const sourceCanvas = canvasRef.value;
+  if (!sourceCanvas) return null;
+
+  const width = Math.max(1, sourceCanvas.clientWidth);
+  const height = Math.max(1, sourceCanvas.clientHeight);
+  const dpr = window.devicePixelRatio || 1;
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = Math.floor(width * dpr);
+  exportCanvas.height = Math.floor(height * dpr);
+
+  const ctx = exportCanvas.getContext("2d");
+  if (!ctx) return null;
+
+  renderScene(ctx, width, height, {
+    mode: "export",
+    dpr,
+    includeUiOverlays: false,
+  });
+
+  return { canvas: exportCanvas, width, height };
+}
+
 function exportAsPng() {
-  const canvas = canvasRef.value;
-  if (!canvas) return;
+  const rendered = createRenderedExportCanvas();
+  if (!rendered) return;
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  canvas.toBlob((blob) => {
+  rendered.canvas.toBlob((blob) => {
     if (!blob) return;
     downloadBlob(`canvas-${stamp}.png`, blob);
   }, "image/png");
@@ -3689,14 +3943,12 @@ function escapeXml(value: string) {
 }
 
 function exportAsSvg() {
-  const canvas = canvasRef.value;
-  if (!canvas) return;
-  const width = Math.max(1, canvas.clientWidth);
-  const height = Math.max(1, canvas.clientHeight);
-  const pngDataUrl = canvas.toDataURL("image/png");
+  const rendered = createRenderedExportCanvas();
+  if (!rendered) return;
+  const pngDataUrl = rendered.canvas.toDataURL("image/png");
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<image href="${escapeXml(pngDataUrl)}" x="0" y="0" width="${width}" height="${height}" />`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${rendered.width}" height="${rendered.height}" viewBox="0 0 ${rendered.width} ${rendered.height}">`,
+    `<image href="${escapeXml(pngDataUrl)}" x="0" y="0" width="${rendered.width}" height="${rendered.height}" />`,
     "</svg>",
   ].join("");
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -3754,6 +4006,7 @@ onUnmounted(() => {
 
 watch(
   () => [
+    themeStore.state.resolvedTheme,
     canvasStore.state.viewport.x,
     canvasStore.state.viewport.y,
     canvasStore.state.viewport.zoom,
@@ -3771,7 +4024,7 @@ watch(
 );
 
 watch(
-  () => [canvasStore.state.voteResultsVisible, canvasStore.state.voteResults, canvasStore.state.elements],
+  () => [themeStore.state.resolvedTheme, canvasStore.state.voteResultsVisible, canvasStore.state.voteResults, canvasStore.state.elements],
   () => {
     nextTick(() => {
       drawVoteResultPreviews();
@@ -4448,12 +4701,12 @@ watch(
   position: relative;
   min-width: 0;
   min-height: 0;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-left: 0;
   border-top: 0;
   border-radius: 0 0 12px 0;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
 }
 
 .canvas-shell.following {
@@ -4473,16 +4726,16 @@ canvas {
   right: 12px;
   z-index: 12;
   padding: 8px 12px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
+  background: color-mix(in srgb, var(--color-bg-elevated) 92%, transparent);
+  color: var(--color-text-primary);
   font: 700 1.5rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .canvas-timer.warning {
-  color: #b91c1c;
-  border-color: #fecaca;
+  color: var(--color-text-danger);
+  border-color: color-mix(in srgb, var(--color-text-danger) 35%, var(--color-border-default));
 }
 
 .follow-indicator {
@@ -4495,7 +4748,7 @@ canvas {
   border-radius: 999px;
   color: #ffffff;
   font: 700 0.78rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.28);
+  box-shadow: var(--color-shadow-popover);
 }
 
 .vote-panel {
@@ -4504,31 +4757,36 @@ canvas {
   left: 12px;
   z-index: 12;
   width: 150px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.97);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
   padding: 10px;
   display: grid;
   gap: 8px;
 }
 
 .vote-panel-title {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 600 0.72rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .vote-panel-count {
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1.3rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .vote-panel-btn {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   padding: 6px 8px;
   font: 600 0.74rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
+}
+
+.vote-panel-btn:hover {
+  background: var(--color-button-hover);
 }
 
 .vote-controls {
@@ -4538,26 +4796,31 @@ canvas {
   display: grid;
   justify-items: center;
   gap: 4px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
   padding: 4px;
 }
 
 .vote-controls button {
   width: 24px;
   height: 24px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #f8fafc;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   cursor: pointer;
   font: 700 0.85rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.vote-controls button:hover {
+  background: var(--color-button-hover);
 }
 
 .vote-controls span {
   min-width: 20px;
   text-align: center;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 0.82rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -4565,10 +4828,10 @@ canvas {
   position: absolute;
   z-index: 23;
   width: 184px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-menu);
   padding: 8px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -4592,18 +4855,18 @@ canvas {
 }
 
 .note-reaction-emoji:hover {
-  background: rgba(226, 232, 240, 0.35);
+  background: var(--color-bg-hover);
 }
 
 .note-reaction-emoji.active {
-  background: rgba(191, 219, 254, 0.45);
+  background: var(--color-bg-selected-soft);
 }
 
 .vote-results-modal {
   position: absolute;
   inset: 0;
   z-index: 25;
-  background: rgba(15, 23, 42, 0.24);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4613,10 +4876,10 @@ canvas {
   width: min(780px, calc(100% - 32px));
   max-height: calc(100% - 32px);
   overflow: auto;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-soft);
   padding: 14px;
   display: grid;
   gap: 10px;
@@ -4624,7 +4887,7 @@ canvas {
 
 .vote-results-head h3 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -4650,14 +4913,14 @@ canvas {
 .vote-result-preview {
   width: 140px;
   height: 72px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   flex-shrink: 0;
 }
 
 .vote-results-item span {
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 600 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
   white-space: nowrap;
   overflow: hidden;
@@ -4666,7 +4929,7 @@ canvas {
 
 .vote-results-score {
   justify-self: end;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -4676,26 +4939,31 @@ canvas {
 }
 
 .vote-results-actions button {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   padding: 6px 10px;
   font: 600 0.8rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
+.vote-results-actions button:hover {
+  background: var(--color-button-hover);
+}
+
 .text-editor {
   position: absolute;
   z-index: 10;
-  border: 1px solid #93c5fd;
+  border: 1px solid var(--color-border-primary);
   border-radius: 8px;
   outline: none;
   padding: 4px 8px;
   line-height: 1.3;
   font-weight: 600;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
   resize: none;
 }
 
@@ -4708,23 +4976,23 @@ canvas {
   position: absolute;
   z-index: 30;
   min-width: 240px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-menu);
   padding: 8px;
 }
 
 .menu-section {
   padding-bottom: 8px;
   margin-bottom: 8px;
-  border-bottom: 1px solid #eef2f6;
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
 .menu-label {
   display: block;
   margin-bottom: 6px;
-  color: #475569;
+  color: var(--color-text-secondary);
   font: 600 0.74rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -4748,11 +5016,11 @@ canvas {
   width: 16px;
   margin-right: 8px;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .menu-item-arrow {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 
@@ -4764,10 +5032,10 @@ canvas {
   z-index: 40;
   min-width: 190px;
   padding: 8px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-menu);
 }
 
 .submenu::before {
@@ -4789,7 +5057,7 @@ canvas {
 
 .submenu-separator {
   margin: 4px 0 6px;
-  border-top: 1px solid #eef2f6;
+  border-top: 1px solid var(--color-border-muted);
 }
 
 .text-type-panel {
@@ -4802,23 +5070,23 @@ canvas {
   display: grid;
   gap: 4px;
   font: 600 0.74rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .text-type-field select {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   padding: 6px 8px;
   font: 500 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .text-type-field input {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   padding: 6px 8px;
   font: 500 0.78rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -4833,7 +5101,7 @@ canvas {
   display: grid;
   gap: 4px;
   font: 600 0.74rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .text-type-row {
@@ -4842,7 +5110,7 @@ canvas {
   justify-content: space-between;
   gap: 10px;
   font: 600 0.74rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .icon-group {
@@ -4853,21 +5121,21 @@ canvas {
 .icon-btn {
   width: 30px;
   height: 28px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   cursor: pointer;
 }
 
 .icon-btn:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 .icon-btn.active {
-  background: #dbeafe;
-  border-color: #60a5fa;
-  color: #1e3a8a;
+  background: var(--color-bg-selected-soft);
+  border-color: var(--color-focus-ring);
+  color: var(--color-text-primary);
 }
 
 .swatches {
@@ -4879,7 +5147,7 @@ canvas {
 .swatch {
   width: 24px;
   height: 24px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   cursor: pointer;
 }
@@ -4887,10 +5155,10 @@ canvas {
 .swatch-transparent {
   background:
     linear-gradient(45deg,
-      #e2e8f0 0 25%,
-      #ffffff 25% 50%,
-      #e2e8f0 50% 75%,
-      #ffffff 75% 100%);
+      var(--color-border-muted) 0 25%,
+      var(--color-bg-elevated) 25% 50%,
+      var(--color-border-muted) 50% 75%,
+      var(--color-bg-elevated) 75% 100%);
   background-size: 12px 12px;
 }
 
@@ -4916,7 +5184,7 @@ canvas {
   text-align: left;
   padding: 7px 8px;
   border-radius: 8px;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 500 0.8rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
@@ -4924,22 +5192,22 @@ canvas {
 .menu-item-with-separator {
   margin-bottom: 8px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #eef2f6;
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
 .menu-item:hover {
-  background: #f1f5f9;
+  background: var(--color-bg-hover);
 }
 
 .menu-item.active {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-bg-selected-soft);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .menu-item-check {
   margin-left: auto;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 
@@ -4949,7 +5217,7 @@ canvas {
 }
 
 .menu-item.danger {
-  color: #b91c1c;
+  color: var(--color-text-danger);
 }
 
 .menu-icons {
@@ -4957,25 +5225,26 @@ canvas {
   gap: 8px;
   padding-bottom: 8px;
   margin-bottom: 8px;
-  border-bottom: 1px solid #eef2f6;
+  border-bottom: 1px solid var(--color-border-muted);
 }
 
 .menu-icons button {
   width: 34px;
   height: 34px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   cursor: pointer;
 }
 
 .menu-icons button:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 @media (max-width: 760px) {
   .canvas-shell {
-    border-left: 1px solid #d0d7de;
+    border-left: 1px solid var(--color-border-strong);
     border-radius: 0 0 12px 12px;
   }
 }

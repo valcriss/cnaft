@@ -511,11 +511,10 @@ function goDashboard() {
 
 <style scoped>
 .app-layout {
-  box-sizing: border-box;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: #f1f3f5;
+  background: var(--color-bg-app-alt);
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr);
 }
@@ -525,8 +524,8 @@ function goDashboard() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #d1d5db;
-  background: #ffffff;
+  border-bottom: 1px solid var(--color-border-strong);
+  background: var(--color-bg-elevated);
   padding: 0 12px;
 }
 
@@ -540,8 +539,8 @@ function goDashboard() {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(241, 245, 249, 0.9);
-  color: #334155;
+  background: color-mix(in srgb, var(--color-bg-app) 88%, transparent);
+  color: var(--color-text-secondary);
   font: 600 0.84rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -554,20 +553,24 @@ function goDashboard() {
 }
 
 .ghost-btn {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--color-button-bg);
   height: 32px;
   padding: 0 10px;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
+}
+
+.ghost-btn:hover {
+  background: var(--color-button-hover);
 }
 
 .share-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   z-index: 60;
@@ -575,17 +578,18 @@ function goDashboard() {
 
 .share-modal {
   width: min(460px, calc(100% - 24px));
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   padding: 14px;
   display: grid;
   gap: 10px;
+  box-shadow: var(--color-shadow-soft);
 }
 
 .share-modal h3 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -595,16 +599,18 @@ function goDashboard() {
 }
 
 .share-field span {
-  color: #475569;
+  color: var(--color-text-secondary);
   font: 600 0.74rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .share-field select,
 .share-url-wrap input {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   height: 34px;
   padding: 0 10px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
 }
 
 .share-actions {
@@ -614,14 +620,18 @@ function goDashboard() {
 }
 
 .ghost-btn.primary {
-  background: #2563eb;
-  border-color: #1d4ed8;
+  background: var(--color-button-primary-bg);
+  border-color: var(--color-primary-strong);
   color: #ffffff;
+}
+
+.ghost-btn.primary:hover:not(:disabled) {
+  background: var(--color-button-primary-hover);
 }
 
 .share-error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-text-danger);
   font: 600 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 

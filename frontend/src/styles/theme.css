@@ -1,0 +1,132 @@
+:root {
+  --color-bg-app: #f8fafc;
+  --color-bg-app-alt: #f1f5f9;
+  --color-bg-elevated: #ffffff;
+  --color-bg-subtle: #f8fafc;
+  --color-bg-soft: #f1f5f9;
+  --color-bg-hover: #eef2f6;
+  --color-bg-selected: #dbeafe;
+  --color-bg-selected-soft: #e0ecff;
+  --color-bg-info-soft: #e0f2fe;
+  --color-bg-warning-soft: #fef3c7;
+  --color-bg-danger-soft: #fef2f2;
+  --color-border-default: #cbd5e1;
+  --color-border-strong: #d0d7de;
+  --color-border-muted: #e2e8f0;
+  --color-border-selected: #bfdbfe;
+  --color-border-primary: #93c5fd;
+  --color-border-accent: #d5e2ef;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+  --color-text-accent: #1d4ed8;
+  --color-text-danger: #b91c1c;
+  --color-text-danger-strong: #7d1f1f;
+  --color-text-success: #216c3f;
+  --color-text-warning: #92400e;
+  --color-primary: #2563eb;
+  --color-primary-strong: #1d4ed8;
+  --color-button-bg: #f8fafc;
+  --color-button-hover: #eef2f6;
+  --color-button-primary-bg: #2563eb;
+  --color-button-primary-hover: #1d4ed8;
+  --color-overlay: rgba(15, 23, 42, 0.28);
+  --color-overlay-strong: rgba(17, 33, 52, 0.44);
+  --color-shadow-soft: 0 20px 40px rgba(15, 23, 42, 0.08);
+  --color-shadow-popover: 0 10px 24px rgba(18, 37, 58, 0.16);
+  --color-shadow-menu: 0 12px 30px rgba(15, 23, 42, 0.18);
+  --color-focus-ring: #60a5fa;
+  --page-accent-auth-1: #e0f2fe;
+  --page-accent-auth-2: #eef2ff;
+  --page-accent-dashboard-1: #e0f2fe;
+  --page-accent-dashboard-2: #dbeafe;
+}
+
+:root[data-theme="dark"] {
+  --color-bg-app: #1f1f1f;
+  --color-bg-app-alt: #1f1f1f;
+  --color-bg-elevated: #242424;
+  --color-bg-subtle: #202020;
+  --color-bg-soft: #262626;
+  --color-bg-hover: #2d2d2d;
+  --color-bg-selected: #1d4ed8;
+  --color-bg-selected-soft: rgba(37, 99, 235, 0.2);
+  --color-bg-info-soft: rgba(14, 165, 233, 0.18);
+  --color-bg-warning-soft: rgba(245, 158, 11, 0.18);
+  --color-bg-danger-soft: rgba(239, 68, 68, 0.18);
+  --color-border-default: #3a3a3a;
+  --color-border-strong: #4a4a4a;
+  --color-border-muted: #303030;
+  --color-border-selected: #525252;
+  --color-border-primary: #5f5f5f;
+  --color-border-accent: #3a3a3a;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
+  --color-text-accent: #f1f5f9;
+  --color-text-danger: #fca5a5;
+  --color-text-danger-strong: #fecaca;
+  --color-text-success: #86efac;
+  --color-text-warning: #fde68a;
+  --color-primary: #1f1f1f;
+  --color-primary-strong: #181818;
+  --color-button-bg: #181818;
+  --color-button-hover: #222222;
+  --color-button-primary-bg: #181818;
+  --color-button-primary-hover: #222222;
+  --color-overlay: rgba(0, 0, 0, 0.58);
+  --color-overlay-strong: rgba(0, 0, 0, 0.72);
+  --color-shadow-soft: 0 22px 44px rgba(0, 0, 0, 0.38);
+  --color-shadow-popover: 0 14px 32px rgba(0, 0, 0, 0.42);
+  --color-shadow-menu: 0 16px 34px rgba(0, 0, 0, 0.48);
+  --color-focus-ring: #93c5fd;
+  --page-accent-auth-1: rgba(255, 255, 255, 0.03);
+  --page-accent-auth-2: rgba(255, 255, 255, 0.02);
+  --page-accent-dashboard-1: rgba(255, 255, 255, 0.025);
+  --page-accent-dashboard-2: rgba(255, 255, 255, 0.02);
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+html {
+  background: var(--color-bg-app);
+}
+
+body {
+  font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  color-scheme: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

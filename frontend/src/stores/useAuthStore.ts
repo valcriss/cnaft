@@ -1,10 +1,12 @@
 import { computed, reactive } from "vue";
+import { useThemeStore, isThemePreference, type ThemePreference } from "./useThemeStore";
 
 type AuthUser = {
   id: string;
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  themePreference: ThemePreference;
 };
 
 type AuthState = {
@@ -33,6 +35,28 @@ const state = reactive<AuthState>({
 
 let refreshPromise: Promise<boolean> | null = null;
 
+function syncThemePreference(user: AuthUser | null) {
+  const theme = useThemeStore();
+  if (user?.themePreference) {
+    theme.setPreference(user.themePreference);
+  }
+}
+
+function normalizeUser(value: unknown): AuthUser | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== "string" || typeof raw.email !== "string" || typeof raw.displayName !== "string") {
+    return null;
+  }
+  return {
+    id: raw.id,
+    email: raw.email,
+    displayName: raw.displayName,
+    avatarUrl: typeof raw.avatarUrl === "string" ? raw.avatarUrl : null,
+    themePreference: isThemePreference(raw.themePreference) ? raw.themePreference : "system",
+  };
+}
+
 class ApiError extends Error {
   status: number;
   data: unknown;
@@ -52,7 +76,7 @@ function parseStoredSession(raw: string | null) {
     return {
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken,
-      user: parsed.user && typeof parsed.user === "object" ? (parsed.user as AuthUser) : null,
+      user: normalizeUser(parsed.user),
     };
   } catch {
     return null;
@@ -78,6 +102,7 @@ function setSession(input: { accessToken: string; refreshToken: string; user: Au
   state.accessToken = input.accessToken;
   state.refreshToken = input.refreshToken;
   state.user = input.user;
+  syncThemePreference(input.user);
   persist();
 }
 
@@ -90,6 +115,7 @@ function clearSession() {
 
 function setUser(user: AuthUser | null) {
   state.user = user;
+  syncThemePreference(user);
   persist();
 }
 
@@ -97,7 +123,7 @@ function decodeJwtPayload(token: string) {
   const [, payload] = token.split(".");
   if (!payload) return null;
   try {
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const json = atob(payload.split("-").join("+").split("_").join("/"));
     return JSON.parse(json) as { exp?: number };
   } catch {
     return null;
@@ -158,7 +184,7 @@ async function apiRequest<T>(path: string, options?: { method?: string; body?: u
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method,
     headers,
-    body: typeof options?.body === "undefined" ? undefined : JSON.stringify(options.body),
+    body: options?.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
   if (response.status === 401 && needsAuth && retryOn401) {
@@ -201,6 +227,7 @@ async function init() {
     state.accessToken = stored.accessToken;
     state.refreshToken = stored.refreshToken;
     state.user = stored.user;
+    syncThemePreference(stored.user);
   }
   state.initialized = true;
 }

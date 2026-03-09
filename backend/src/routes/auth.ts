@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ThemePreference as PrismaThemePreference } from "@prisma/client";
 import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../lib/prisma.js";
@@ -23,11 +24,15 @@ const loginSchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
+const themePreferenceSchema = z.enum(["light", "dark", "system"]);
 const avatarUpdateSchema = z.object({
   avatarDataUrl: z.string().max(2_000_000).nullable(),
 });
 const profileUpdateSchema = z.object({
   displayName: z.string().trim().min(2).max(80),
+});
+const preferenceUpdateSchema = z.object({
+  themePreference: themePreferenceSchema,
 });
 const oidcAuthorizeSchema = z.object({
   redirectUri: z.url(),
@@ -39,6 +44,37 @@ const oidcExchangeSchema = z.object({
   redirectUri: z.url(),
   codeVerifier: z.string().min(8).max(256).optional(),
 });
+
+const publicUserSelect = {
+  id: true,
+  email: true,
+  displayName: true,
+  avatarUrl: true,
+  themePreference: true,
+} as const;
+
+function toThemePreferenceDto(themePreference: PrismaThemePreference) {
+  return themePreference.toLowerCase() as "light" | "dark" | "system";
+}
+
+function toPrismaThemePreference(themePreference: "light" | "dark" | "system") {
+  return themePreference.toUpperCase() as PrismaThemePreference;
+}
+
+function serializeUser(
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+    themePreference: PrismaThemePreference;
+  },
+) {
+  return {
+    ...user,
+    themePreference: toThemePreferenceDto(user.themePreference),
+  };
+}
 
 function ensureLocalAuthEnabled() {
   return config.AUTH_PROVIDER === "local";
@@ -63,13 +99,13 @@ router.post("/register", async (req, res) => {
   const passwordHash = await hashPassword(password);
   const user = await prisma.user.create({
     data: { email, displayName, passwordHash },
-    select: { id: true, email: true, displayName: true, avatarUrl: true },
+    select: publicUserSelect,
   });
 
   const accessToken = signAccessToken({ userId: user.id, email: user.email, provider: "local" });
   const refreshToken = signRefreshToken({ userId: user.id, email: user.email, provider: "local" });
   res.status(201).json({
-    user,
+    user: serializeUser(user),
     tokens: {
       accessToken,
       refreshToken,
@@ -99,7 +135,7 @@ router.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, email: true, displayName: true, avatarUrl: true, passwordHash: true },
+    select: { ...publicUserSelect, passwordHash: true },
   });
   if (!user?.passwordHash) {
     res.status(401).json({ error: "Invalid credentials" });
@@ -114,10 +150,7 @@ router.post("/login", async (req, res) => {
   const refreshToken = signRefreshToken({ userId: user.id, email: user.email, provider: "local" });
   res.json({
     user: {
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
+      ...serializeUser(user),
     },
     tokens: {
       accessToken,
@@ -217,18 +250,13 @@ router.post("/oidc/exchange", async (req, res) => {
         avatarUrl,
         passwordHash: null,
       },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        avatarUrl: true,
-      },
+      select: publicUserSelect,
     });
 
     const accessToken = signAccessToken({ userId: user.id, email: user.email, provider: "oidc" });
     const refreshToken = signRefreshToken({ userId: user.id, email: user.email, provider: "oidc" });
     res.json({
-      user,
+      user: serializeUser(user),
       tokens: {
         accessToken,
         refreshToken,
@@ -242,13 +270,13 @@ router.post("/oidc/exchange", async (req, res) => {
 router.get("/me", requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.auth!.userId },
-    select: { id: true, email: true, displayName: true, avatarUrl: true, createdAt: true, updatedAt: true },
+    select: publicUserSelect,
   });
   if (!user) {
     res.status(404).json({ error: "User not found" });
     return;
   }
-  res.json({ user });
+  res.json({ user: serializeUser(user) });
 });
 
 router.patch("/me/avatar", requireAuth, async (req, res) => {
@@ -269,10 +297,10 @@ router.patch("/me/avatar", requireAuth, async (req, res) => {
     data: {
       avatarUrl: avatarDataUrl,
     },
-    select: { id: true, email: true, displayName: true, avatarUrl: true },
+    select: publicUserSelect,
   });
 
-  res.json({ user });
+  res.json({ user: serializeUser(user) });
 });
 
 router.patch("/me", requireAuth, async (req, res) => {
@@ -292,10 +320,28 @@ router.patch("/me", requireAuth, async (req, res) => {
     data: {
       displayName: parsed.data.displayName,
     },
-    select: { id: true, email: true, displayName: true, avatarUrl: true },
+    select: publicUserSelect,
   });
 
-  res.json({ user });
+  res.json({ user: serializeUser(user) });
+});
+
+router.patch("/me/preferences", requireAuth, async (req, res) => {
+  const parsed = preferenceUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const user = await prisma.user.update({
+    where: { id: req.auth!.userId },
+    data: {
+      themePreference: toPrismaThemePreference(parsed.data.themePreference),
+    },
+    select: publicUserSelect,
+  });
+
+  res.json({ user: serializeUser(user) });
 });
 
 export default router;

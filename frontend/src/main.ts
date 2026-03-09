@@ -75,6 +75,8 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import App from "./App.vue";
 import router from "./router";
+import "./styles/theme.css";
+import { useThemeStore } from "./stores/useThemeStore";
 
 library.add(
   faArrowPointer,
@@ -143,5 +145,7 @@ library.add(
   faFolderPlus,
   faCirclePlus,
 );
+
+useThemeStore().init();
 
 createApp(App).use(router).component("font-awesome-icon", FontAwesomeIcon).mount("#app");

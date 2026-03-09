@@ -7,12 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
 model User {
   id                    String                   @id @default(cuid())
   email                 String                   @unique
   passwordHash          String?
   displayName           String
   avatarUrl             String?
+  themePreference       ThemePreference          @default(SYSTEM)
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt
   documents             Document[]

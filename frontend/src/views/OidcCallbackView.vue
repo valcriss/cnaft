@@ -50,15 +50,16 @@ onMounted(async () => {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  background: #f8fafc;
+  background: var(--color-bg-app);
 }
 .callback-card {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: #ffffff;
-  color: #334155;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
   padding: 16px;
   font: 600 0.92rem/1.4 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: var(--color-shadow-soft);
 }
 </style>
 

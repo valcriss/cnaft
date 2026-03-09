@@ -1490,21 +1490,19 @@ onUnmounted(() => {
 .dashboard-page {
   height: 100dvh;
   padding: 18px;
-  box-sizing: border-box;
   background:
-    radial-gradient(circle at 10% 10%, #e0f2fe 0%, transparent 35%),
-    radial-gradient(circle at 90% 0%, #dbeafe 0%, transparent 38%),
-    #f8fafc;
+    radial-gradient(circle at 10% 10%, var(--page-accent-dashboard-1) 0%, transparent 35%),
+    radial-gradient(circle at 90% 0%, var(--page-accent-dashboard-2) 0%, transparent 38%),
+    var(--color-bg-app);
 }
 
 .dashboard-shell {
   height: 100%;
   min-height: 0;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 16px;
-  background: #ffffff;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-soft);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -1529,22 +1527,22 @@ onUnmounted(() => {
 
 .title-block h1 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1.35rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .subtitle {
   margin: 4px 0 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .error-banner {
   margin: 0;
-  border: 1px solid #fecaca;
+  border: 1px solid color-mix(in srgb, var(--color-text-danger) 35%, var(--color-border-default));
   border-radius: 10px;
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--color-bg-danger-soft);
+  color: var(--color-text-danger);
   padding: 8px 10px;
   font: 600 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -1584,10 +1582,10 @@ onUnmounted(() => {
 
 .breadcrumb-segment {
   height: 30px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 999px;
-  background: #f8fafc;
-  color: #334155;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
@@ -1600,7 +1598,7 @@ onUnmounted(() => {
 }
 
 .breadcrumb-separator {
-  color: #94a3b8;
+  color: var(--color-text-subtle);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1609,9 +1607,9 @@ onUnmounted(() => {
 
 .directories-panel {
   width: 30px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(180deg, var(--color-bg-subtle) 0%, var(--color-bg-soft) 100%);
   transition:
     width 240ms ease,
     transform 280ms ease,
@@ -1624,7 +1622,7 @@ onUnmounted(() => {
 
 .directories-header {
   height: 34px;
-  border-bottom: 1px solid #dbe7f3;
+  border-bottom: 1px solid var(--color-border-muted);
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
@@ -1632,7 +1630,7 @@ onUnmounted(() => {
 
 .directories-panel.is-open {
   width: 280px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 60%, transparent);
 }
 
 .directories-toggle {
@@ -1640,7 +1638,7 @@ onUnmounted(() => {
   height: 100%;
   border: 0;
   background: transparent;
-  color: #1e3a8a;
+  color: var(--color-text-accent);
   cursor: pointer;
   display: grid;
   place-items: center;
@@ -1652,14 +1650,14 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   align-items: center;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 0.88rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .directories-content {
   min-height: 0;
   padding: 10px 8px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
@@ -1675,7 +1673,7 @@ onUnmounted(() => {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   letter-spacing: 0.08em;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 700 0.64rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   text-transform: uppercase;
   cursor: pointer;
@@ -1690,20 +1688,20 @@ onUnmounted(() => {
 }
 
 .folders-tree.root-dropzone {
-  outline: 2px dashed #2563eb;
+  outline: 2px dashed var(--color-primary);
   outline-offset: -2px;
   border-radius: 8px;
 }
 
 .folder-root-target {
-  border: 1px dashed #93c5fd;
+  border: 1px dashed var(--color-border-primary);
   border-radius: 8px;
   min-height: 28px;
   display: grid;
   place-items: center;
-  color: #1e40af;
+  color: var(--color-text-accent);
   font: 600 0.7rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #eff6ff;
+  background: var(--color-bg-info-soft);
 }
 
 .folder-shortcuts {
@@ -1722,10 +1720,10 @@ onUnmounted(() => {
 .folder-icon-btn {
   width: 36px;
   height: 36px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: #ffffff;
-  color: #334155;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1733,15 +1731,15 @@ onUnmounted(() => {
 }
 
 .folder-icon-btn.selected {
-  background: #e0ecff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
+  background: var(--color-bg-selected-soft);
+  border-color: var(--color-border-selected);
+  color: var(--color-text-accent);
 }
 
 .folder-icon-btn.dropzone {
   border-style: dashed;
-  border-color: #2563eb;
-  background: #dbeafe;
+  border-color: var(--color-primary);
+  background: var(--color-bg-selected);
 }
 
 .folder-icon-btn :deep(svg) {
@@ -1773,20 +1771,20 @@ onUnmounted(() => {
 }
 
 .folder-row.selected {
-  background: #e0ecff;
-  border-color: #bfdbfe;
+  background: var(--color-bg-selected-soft);
+  border-color: var(--color-border-selected);
 }
 
 .folder-row.dropzone {
   border-style: dashed;
-  border-color: #2563eb;
-  background: #dbeafe;
+  border-color: var(--color-primary);
+  background: var(--color-bg-selected);
 }
 
 .folder-row.tree-drop-inside {
   border-style: dashed;
-  border-color: #0ea5e9;
-  background: #e0f2fe;
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-info-soft);
 }
 
 .folder-row.tree-drop-before::before {
@@ -1795,7 +1793,7 @@ onUnmounted(() => {
   left: 2px;
   right: 2px;
   top: -2px;
-  border-top: 2px solid #0ea5e9;
+  border-top: 2px solid var(--color-border-primary);
 }
 
 .folder-row.tree-drop-after::after {
@@ -1804,7 +1802,7 @@ onUnmounted(() => {
   left: 2px;
   right: 2px;
   bottom: -2px;
-  border-bottom: 2px solid #0ea5e9;
+  border-bottom: 2px solid var(--color-border-primary);
 }
 
 .folder-row.dragging {
@@ -1817,7 +1815,7 @@ onUnmounted(() => {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #334155;
+  color: var(--color-text-secondary);
   cursor: pointer;
   padding: 0;
   margin: 0;
@@ -1849,7 +1847,7 @@ onUnmounted(() => {
   place-items: center;
   justify-self: center;
   align-self: center;
-  color: #64748b;
+  color: var(--color-text-muted);
   cursor: pointer;
   line-height: 1;
 }
@@ -1865,7 +1863,7 @@ onUnmounted(() => {
   background: transparent;
   text-align: left;
   min-height: 28px;
-  color: #1e293b;
+  color: var(--color-text-primary);
   cursor: pointer;
   padding: 0;
 }
@@ -1882,7 +1880,7 @@ onUnmounted(() => {
   height: 16px;
   border: 0;
   background: transparent;
-  color: #d1d5db;
+  color: var(--color-text-subtle);
   padding: 0;
   margin: 0;
   cursor: pointer;
@@ -1893,7 +1891,7 @@ onUnmounted(() => {
 }
 
 .folder-delete-btn:hover {
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
 .folder-delete-btn :deep(svg) {
@@ -1909,15 +1907,15 @@ onUnmounted(() => {
 .icon-btn {
   width: 34px;
   height: 34px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: #ffffff;
-  color: #334155;
+  background: var(--color-button-bg);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
 .icon-btn:hover {
-  background: #f1f5f9;
+  background: var(--color-button-hover);
 }
 
 .filter-menu {
@@ -1925,10 +1923,10 @@ onUnmounted(() => {
   top: calc(100% + 8px);
   right: 0;
   min-width: 250px;
-  border: 1px solid #d5e2ef;
+  border: 1px solid var(--color-border-accent);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(18, 37, 58, 0.16);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-popover);
   padding: 10px;
   z-index: 30;
 }
@@ -1937,7 +1935,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 500 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -1955,9 +1953,9 @@ onUnmounted(() => {
 }
 
 .doc-tile {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   min-height: 190px;
   text-align: left;
   cursor: pointer;
@@ -1968,8 +1966,8 @@ onUnmounted(() => {
 }
 
 .doc-tile:hover {
-  border-color: #93c5fd;
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.12);
+  border-color: var(--color-border-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
 .doc-tile.dragging {
@@ -1981,22 +1979,22 @@ onUnmounted(() => {
   place-items: center;
   grid-template-rows: auto auto;
   gap: 6px;
-  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--color-bg-subtle) 0%, var(--color-bg-elevated) 100%);
 }
 
 .create-plus {
-  color: #2563eb;
+  color: var(--color-primary);
   font: 700 2rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .create-label {
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 600 0.85rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .tile-thumb {
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
   padding: 8px;
   box-sizing: border-box;
   overflow: hidden;
@@ -2004,7 +2002,7 @@ onUnmounted(() => {
 
 .tile-thumb pre {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.64rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
 }
@@ -2030,7 +2028,7 @@ onUnmounted(() => {
 }
 
 .tile-meta strong {
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 600 0.86rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2047,7 +2045,7 @@ onUnmounted(() => {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #334155;
+  color: var(--color-text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2055,16 +2053,16 @@ onUnmounted(() => {
 }
 
 .doc-menu-btn:hover {
-  background: #f1f5f9;
+  background: var(--color-bg-hover);
 }
 
 .doc-menu {
   position: fixed;
   min-width: 170px;
-  border: 1px solid #d5e2ef;
+  border: 1px solid var(--color-border-accent);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(18, 37, 58, 0.16);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-popover);
   padding: 6px;
   display: grid;
   gap: 4px;
@@ -2077,8 +2075,8 @@ onUnmounted(() => {
   height: 32px;
   border: 0;
   border-radius: 8px;
-  background: #ffffff;
-  color: #1a3652;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
   text-align: left;
   display: flex;
   align-items: center;
@@ -2088,58 +2086,58 @@ onUnmounted(() => {
 }
 
 .doc-menu-item:hover {
-  background: #f3f8ff;
+  background: var(--color-bg-hover);
 }
 
 .doc-menu-item.danger {
-  color: #7d1f1f;
+  color: var(--color-text-danger-strong);
 }
 
 .doc-menu-item .leading {
   display: inline-flex;
   width: 16px;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .folder-menu-separator {
   height: 1px;
   margin: 4px 0;
-  background: #e2e8f0;
+  background: var(--color-border-muted);
 }
 
 .tile-meta small {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .tile-meta small.muted {
-  color: #94a3b8;
+  color: var(--color-text-subtle);
 }
 
 .archived-tag {
-  color: #92400e;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+  color: var(--color-text-warning);
+  background: var(--color-bg-warning-soft);
+  border: 1px solid color-mix(in srgb, var(--color-text-warning) 30%, var(--color-border-default));
   border-radius: 999px;
   width: fit-content;
   padding: 0 8px;
 }
 
 .folder-tag {
-  color: #0f766e;
+  color: var(--color-text-accent);
 }
 
 .loading-state {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   z-index: 60;
@@ -2147,23 +2145,24 @@ onUnmounted(() => {
 
 .dialog-card {
   width: min(460px, calc(100% - 24px));
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
   padding: 14px;
   display: grid;
   gap: 10px;
+  box-shadow: var(--color-shadow-soft);
 }
 
 .dialog-card h3 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 700 1rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .dialog-text {
   margin: 0;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 500 0.85rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -2173,15 +2172,17 @@ onUnmounted(() => {
 }
 
 .dialog-field span {
-  color: #475569;
+  color: var(--color-text-secondary);
   font: 600 0.74rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .dialog-field input {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   height: 34px;
   padding: 0 10px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
   font: 500 0.82rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -2194,7 +2195,7 @@ onUnmounted(() => {
 
 .dialog-error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-text-danger);
   font: 600 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -2205,20 +2206,28 @@ onUnmounted(() => {
 }
 
 .ghost-btn {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--color-button-bg);
   height: 32px;
   padding: 0 10px;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
+.ghost-btn:hover {
+  background: var(--color-button-hover);
+}
+
 .ghost-btn.primary {
-  background: #2563eb;
-  border-color: #1d4ed8;
+  background: var(--color-button-primary-bg);
+  border-color: var(--color-primary-strong);
   color: #ffffff;
+}
+
+.ghost-btn.primary:hover:not(:disabled) {
+  background: var(--color-button-primary-hover);
 }
 
 .ghost-btn.danger {
@@ -2230,7 +2239,7 @@ onUnmounted(() => {
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.32);
+  background: var(--color-overlay);
   z-index: 35;
 }
 
@@ -2252,7 +2261,7 @@ onUnmounted(() => {
     z-index: 50;
     border-radius: 16px;
     transform: translateX(-108%);
-    box-shadow: 0 20px 34px rgba(15, 23, 42, 0.24);
+    box-shadow: var(--color-shadow-menu);
   }
 
   .directories-panel.is-open {

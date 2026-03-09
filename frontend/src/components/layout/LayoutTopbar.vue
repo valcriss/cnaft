@@ -790,21 +790,20 @@ onUnmounted(() => {
 <style scoped>
 .topbar {
   height: 100%;
-  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-bottom: 0;
   border-left: 0;
   border-radius: 0 12px 0 0;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
 }
 
 .brand {
   font: 600 0.95rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #1f2328;
+  color: var(--color-text-primary);
 }
 
 .brand.editable {
@@ -817,15 +816,14 @@ onUnmounted(() => {
 }
 
 .brand-input {
-  box-sizing: border-box;
   width: 100%;
   height: 32px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   border-radius: 8px;
   padding: 0 10px;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 600 0.9rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
-  background: #ffffff;
+  background: var(--color-bg-elevated);
 }
 
 .actions {
@@ -867,9 +865,9 @@ onUnmounted(() => {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  border: 2px solid #94a3b8;
-  background: #f8fafc;
-  color: #0f172a;
+  border: 2px solid var(--color-text-subtle);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
@@ -884,17 +882,17 @@ onUnmounted(() => {
 
 .connected-user.following-target {
   box-shadow:
-    0 0 0 2px #ffffff,
+    0 0 0 2px var(--color-bg-elevated),
     0 0 0 4px var(--follow-color);
 }
 
 .connected-user.local {
-  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-text-primary) 8%, transparent);
 }
 
 .connected-user.local.following-target {
   box-shadow:
-    0 0 0 2px #ffffff,
+    0 0 0 2px var(--color-bg-elevated),
     0 0 0 4px var(--follow-color);
 }
 
@@ -912,8 +910,8 @@ onUnmounted(() => {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  border: 2px solid #ffffff;
-  background: #94a3b8;
+  border: 2px solid var(--color-bg-elevated);
+  background: var(--color-text-subtle);
 }
 
 .user-status-dot.status-online {
@@ -931,14 +929,14 @@ onUnmounted(() => {
 .users-separator {
   width: 1px;
   height: 20px;
-  background: #d0d7de;
+  background: var(--color-border-strong);
   margin: 0 2px;
 }
 
 .top-separator {
   width: 1px;
   height: 26px;
-  background: #d0d7de;
+  background: var(--color-border-strong);
   margin: 0 2px;
 }
 
@@ -952,10 +950,10 @@ onUnmounted(() => {
   right: 0;
   z-index: 40;
   min-width: 240px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--color-shadow-menu);
   padding: 8px;
 }
 
@@ -989,13 +987,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 2px 8px;
-  color: #475569;
+  color: var(--color-text-muted);
   font: 500 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   gap: 8px;
 }
 
 .debug-row strong {
-  color: #0f172a;
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 
@@ -1023,31 +1021,31 @@ onUnmounted(() => {
 }
 
 .debug-log-empty {
-  color: #94a3b8;
+  color: var(--color-text-subtle);
   font: 500 0.68rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .debug-log-row {
   display: grid;
   gap: 2px;
-  color: #334155;
+  color: var(--color-text-secondary);
   font: 600 0.68rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .debug-log-row small {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.64rem/1.1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .menu-label {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 8px;
 }
 
 .menu-separator {
   margin: 8px 0;
-  border-top: 1px solid #eef2f6;
+  border-top: 1px solid var(--color-border-muted);
 }
 
 .menu-item {
@@ -1059,13 +1057,13 @@ onUnmounted(() => {
   text-align: left;
   padding: 7px 8px;
   border-radius: 8px;
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 500 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
 .menu-item:hover {
-  background: #f1f5f9;
+  background: var(--color-bg-hover);
 }
 
 .menu-item-leading {
@@ -1073,12 +1071,12 @@ onUnmounted(() => {
   width: 16px;
   margin-right: 8px;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .menu-item-static {
   cursor: default;
-  color: #475569;
+  color: var(--color-text-muted);
 }
 
 .menu-item-static:hover {
@@ -1097,10 +1095,10 @@ onUnmounted(() => {
   width: 32px;
   min-width: 32px;
   height: 30px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #f8fafc;
-  color: #1f2328;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   font: 700 0.9rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0;
   cursor: pointer;
@@ -1113,17 +1111,16 @@ onUnmounted(() => {
 }
 
 .menu-zoom-inline .zoom-inline-btn:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 .timer-input {
-  box-sizing: border-box;
   width: 100%;
   height: 34px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
   padding: 6px 8px;
   font: 600 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -1137,7 +1134,7 @@ onUnmounted(() => {
 .timer-number-field {
   display: grid;
   gap: 4px;
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -1146,7 +1143,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 2px 2px 0;
-  color: #475569;
+  color: var(--color-text-muted);
   font: 500 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -1156,13 +1153,13 @@ onUnmounted(() => {
 }
 
 .vote-capacity {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 600 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 2px;
 }
 
 .vote-error {
-  color: #b91c1c;
+  color: var(--color-text-danger);
   font: 600 0.72rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 0 2px;
 }
@@ -1170,18 +1167,18 @@ onUnmounted(() => {
 .vote-adjust-btn {
   width: 100%;
   height: 30px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   font: 600 0.75rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
 button {
-  border: 1px solid #d0d7de;
-  background: #f6f8fa;
-  color: #1f2328;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   border-radius: 8px;
   width: 36px;
   height: 34px;
@@ -1195,7 +1192,7 @@ button :deep(svg) {
 }
 
 button:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 button:disabled {
@@ -1209,7 +1206,7 @@ button:disabled {
 
 @media (max-width: 760px) {
   .topbar {
-    border-left: 1px solid #d0d7de;
+    border-left: 1px solid var(--color-border-strong);
     border-radius: 12px 12px 0 0;
   }
 }
