@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../../stores/useAuthStore";
+import type { ThemePreference } from "../../stores/useThemeStore";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -12,6 +13,7 @@ const isProfileOpen = ref(false);
 const isAvatarSaving = ref(false);
 const isProfileSaving = ref(false);
 const profileDisplayName = ref("");
+const profileThemePreference = ref<ThemePreference>("system");
 const oidcEnabled = ref(false);
 const errorText = ref("");
 const successText = ref("");
@@ -29,6 +31,14 @@ const initials = computed(() => {
   );
 });
 
+const hasDisplayNameChanged = computed(
+  () => !oidcEnabled.value && profileDisplayName.value.trim() !== (auth.state.user?.displayName || ""),
+);
+const hasThemeChanged = computed(
+  () => profileThemePreference.value !== (auth.state.user?.themePreference ?? "system"),
+);
+const hasProfileChanges = computed(() => hasDisplayNameChanged.value || hasThemeChanged.value);
+
 function toggleMenu() {
   isMenuOpen.value = !isMenuOpen.value;
 }
@@ -41,6 +51,7 @@ async function openProfile() {
   closeMenu();
   isProfileOpen.value = true;
   profileDisplayName.value = auth.state.user?.displayName || "";
+  profileThemePreference.value = auth.state.user?.themePreference ?? "system";
   errorText.value = "";
   successText.value = "";
   try {
@@ -54,7 +65,7 @@ async function openProfile() {
 function closeProfile() {
   isProfileOpen.value = false;
   if (successMessageTimerId !== null) {
-    window.clearTimeout(successMessageTimerId);
+    globalThis.clearTimeout(successMessageTimerId);
     successMessageTimerId = null;
   }
   successText.value = "";
@@ -70,9 +81,9 @@ function logout() {
 function setSuccessTextWithTimeout(message: string) {
   successText.value = message;
   if (successMessageTimerId !== null) {
-    window.clearTimeout(successMessageTimerId);
+    globalThis.clearTimeout(successMessageTimerId);
   }
-  successMessageTimerId = window.setTimeout(() => {
+  successMessageTimerId = globalThis.setTimeout(() => {
     successText.value = "";
     successMessageTimerId = null;
   }, 4000);
@@ -93,7 +104,7 @@ function toDataUrl(file: File) {
 
 async function updateAvatar(avatarDataUrl: string | null) {
   const data = await auth.apiRequest<{
-    user: { id: string; email: string; displayName: string; avatarUrl: string | null };
+    user: { id: string; email: string; displayName: string; avatarUrl: string | null; themePreference: ThemePreference };
   }>("/auth/me/avatar", {
     method: "PATCH",
     auth: true,
@@ -137,13 +148,15 @@ async function removeAvatar() {
 }
 
 async function saveProfile() {
-  if (oidcEnabled.value) return;
   const nextDisplayName = profileDisplayName.value.trim();
-  if (!nextDisplayName) {
+  const nextThemePreference = profileThemePreference.value;
+
+  if (!oidcEnabled.value && !nextDisplayName) {
     errorText.value = "Le nom utilisateur est requis.";
     return;
   }
-  if (nextDisplayName === (auth.state.user?.displayName || "")) {
+
+  if (!hasProfileChanges.value) {
     closeProfile();
     return;
   }
@@ -152,14 +165,45 @@ async function saveProfile() {
   successText.value = "";
   isProfileSaving.value = true;
   try {
-    const data = await auth.apiRequest<{
-      user: { id: string; email: string; displayName: string; avatarUrl: string | null };
-    }>("/auth/me", {
-      method: "PATCH",
-      auth: true,
-      body: { displayName: nextDisplayName },
-    });
-    auth.setUser(data.user);
+    let nextUser = auth.state.user;
+
+    if (hasDisplayNameChanged.value) {
+      const data = await auth.apiRequest<{
+        user: {
+          id: string;
+          email: string;
+          displayName: string;
+          avatarUrl: string | null;
+          themePreference: ThemePreference;
+        };
+      }>("/auth/me", {
+        method: "PATCH",
+        auth: true,
+        body: { displayName: nextDisplayName },
+      });
+      nextUser = data.user;
+    }
+
+    if (hasThemeChanged.value) {
+      const data = await auth.apiRequest<{
+        user: {
+          id: string;
+          email: string;
+          displayName: string;
+          avatarUrl: string | null;
+          themePreference: ThemePreference;
+        };
+      }>("/auth/me/preferences", {
+        method: "PATCH",
+        auth: true,
+        body: { themePreference: nextThemePreference },
+      });
+      nextUser = data.user;
+    }
+
+    if (nextUser) {
+      auth.setUser(nextUser);
+    }
     closeProfile();
   } catch {
     errorText.value = "Impossible de sauvegarder le profil.";
@@ -176,13 +220,13 @@ function onWindowClick(event: MouseEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener("click", onWindowClick);
+  globalThis.addEventListener("click", onWindowClick);
 });
 
 onUnmounted(() => {
-  window.removeEventListener("click", onWindowClick);
+  globalThis.removeEventListener("click", onWindowClick);
   if (successMessageTimerId !== null) {
-    window.clearTimeout(successMessageTimerId);
+    globalThis.clearTimeout(successMessageTimerId);
     successMessageTimerId = null;
   }
 });
@@ -243,6 +287,22 @@ onUnmounted(() => {
 
             <label for="profile-name">Nom utilisateur</label>
             <input id="profile-name" v-model="profileDisplayName" type="text" :readonly="oidcEnabled" />
+
+            <fieldset class="themeFieldset">
+              <legend>Theme</legend>
+              <label class="themeChoice">
+                <input v-model="profileThemePreference" type="radio" value="light" />
+                <span>Clair</span>
+              </label>
+              <label class="themeChoice">
+                <input v-model="profileThemePreference" type="radio" value="dark" />
+                <span>Sombre</span>
+              </label>
+              <label class="themeChoice">
+                <input v-model="profileThemePreference" type="radio" value="system" />
+                <span>Système</span>
+              </label>
+            </fieldset>
           </div>
         </div>
       </div>
@@ -252,7 +312,7 @@ onUnmounted(() => {
 
       <div class="dialogFooter">
         <button type="button" class="secondary" :disabled="isAvatarSaving || isProfileSaving" @click="closeProfile">Annuler</button>
-        <button type="button" :disabled="isAvatarSaving || isProfileSaving || oidcEnabled" @click="saveProfile">
+        <button type="button" :disabled="isAvatarSaving || isProfileSaving || !hasProfileChanges" @click="saveProfile">
           {{ isProfileSaving ? "Veuillez patienter..." : "Sauvegarder" }}
         </button>
       </div>
@@ -269,10 +329,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border-muted);
   border-radius: 12px;
   padding: 6px 8px;
-  background: #f8fafc;
+  background: var(--color-bg-subtle);
 }
 
 .user-panel-button {
@@ -282,20 +342,20 @@ onUnmounted(() => {
 }
 
 .user-panel-button:hover {
-  background: #f1f5f9;
+  background: var(--color-bg-soft);
 }
 
 .avatar-wrap {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-default);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #eff6ff;
-  color: #1e3a8a;
+  background: var(--color-bg-info-soft);
+  color: var(--color-text-accent);
   font: 700 0.72rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -312,12 +372,12 @@ onUnmounted(() => {
 }
 
 .user-meta strong {
-  color: #0f172a;
+  color: var(--color-text-primary);
   font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .user-meta small {
-  color: #64748b;
+  color: var(--color-text-muted);
   font: 500 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -326,10 +386,10 @@ onUnmounted(() => {
   right: 0;
   top: calc(100% + 8px);
   min-width: 170px;
-  background: #ffffff;
-  border: 1px solid #d5e2ef;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-accent);
   border-radius: 10px;
-  box-shadow: 0 10px 24px rgba(18, 37, 58, 0.16);
+  box-shadow: var(--color-shadow-popover);
   padding: 6px;
   display: grid;
   gap: 4px;
@@ -347,8 +407,8 @@ onUnmounted(() => {
   padding: 0 10px;
   text-align: left;
   cursor: pointer;
-  background: #ffffff;
-  color: #1a3652;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
   font: 500 0.78rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -356,21 +416,21 @@ onUnmounted(() => {
   display: inline-flex;
   width: 16px;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .user-menu-item:hover {
-  background: #f3f8ff;
+  background: var(--color-bg-soft);
 }
 
 .user-menu-item.danger {
-  color: #7d1f1f;
+  color: var(--color-text-danger-strong);
 }
 
 .dialogOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(17, 33, 52, 0.44);
+  background: var(--color-overlay-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,18 +441,19 @@ onUnmounted(() => {
 .dialogCard {
   width: min(820px, 100%);
   min-height: 380px;
-  background: #ffffff;
-  border: 1px solid #cfe0f0;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-accent);
   border-radius: 12px;
   padding: 18px;
   display: grid;
   gap: 16px;
+  box-shadow: var(--color-shadow-soft);
 }
 
 .dialogHeader h2 {
   margin: 0;
   font-size: 20px;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .profileGrid {
@@ -412,12 +473,12 @@ onUnmounted(() => {
   width: 124px;
   height: 124px;
   border-radius: 50%;
-  border: 1px solid #bed0e3;
-  background: #ebf3fd;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-info-soft);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #204767;
+  color: var(--color-text-secondary);
   font-weight: 700;
   font-size: 28px;
   overflow: hidden;
@@ -438,21 +499,21 @@ onUnmounted(() => {
 .avatarActions button {
   width: 100%;
   height: 34px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   padding: 0 12px;
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
 .avatarActions button:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 .avatarActions button.secondary {
-  background: #f8fafc;
+  background: var(--color-button-bg);
 }
 
 .avatarActions button:disabled {
@@ -468,24 +529,57 @@ onUnmounted(() => {
 .profileForm label {
   font-size: 13px;
   font-weight: 600;
-  color: #38546f;
+  color: var(--color-text-secondary);
 }
 
 .profileForm input {
   box-sizing: border-box;
   width: 100%;
   height: 36px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
   padding: 6px 8px;
   font: 600 0.8rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .profileForm input[readonly] {
-  background: #f5f9fd;
-  color: #3f5870;
+  background: var(--color-bg-soft);
+  color: var(--color-text-secondary);
+}
+
+.themeFieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: var(--color-bg-subtle);
+}
+
+.themeFieldset legend {
+  padding: 0 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.themeChoice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+}
+
+.themeChoice input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
 }
 
 .dialogFooter {
@@ -498,21 +592,21 @@ onUnmounted(() => {
   width: auto;
   min-width: 94px;
   height: 34px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   padding: 0 12px;
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   font: 600 0.76rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
 
 .dialogFooter button.secondary {
-  background: #f8fafc;
+  background: var(--color-button-bg);
 }
 
 .dialogFooter button:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 .hiddenInput {
@@ -521,12 +615,12 @@ onUnmounted(() => {
 
 .errorText {
   margin: 0;
-  color: #9f2525;
+  color: var(--color-text-danger);
 }
 
 .successText {
   margin: 0;
-  color: #216c3f;
+  color: var(--color-text-success);
 }
 
 @media (max-width: 760px) {

@@ -47,8 +47,8 @@ const tools = [
   align-items: center;
   gap: 8px;
   padding: 10px 8px;
-  background: #ffffff;
-  border: 1px solid #d0d7de;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
   border-right: 0;
   border-radius: 12px 0 0 12px;
 }
@@ -56,10 +56,10 @@ const tools = [
 button {
   width: 40px;
   height: 40px;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #f6f8fa;
-  color: #1f2328;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   font: 600 0.78rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   cursor: pointer;
 }
@@ -69,13 +69,13 @@ button :deep(svg) {
 }
 
 button:hover {
-  background: #eef2f6;
+  background: var(--color-button-hover);
 }
 
 button.active {
-  background: #dbeafe;
-  border-color: #3b82f6;
-  color: #1e3a8a;
+  background: var(--color-bg-selected);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-accent);
 }
 
 @media (max-width: 760px) {

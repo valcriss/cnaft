@@ -77,7 +77,6 @@ function onTitleCommit(title: string) {
 
 <style scoped>
 .workspace {
-  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   display: grid;
@@ -85,6 +84,7 @@ function onTitleCommit(title: string) {
   grid-template-rows: 56px minmax(0, 1fr);
   column-gap: 0;
   padding: 12px;
+  background: var(--color-bg-app-alt);
 }
 
 .workspace-sidebar {

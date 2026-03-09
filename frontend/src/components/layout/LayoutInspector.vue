@@ -63,11 +63,11 @@ function onStrokeInput(event: Event) {
 
 <style scoped>
 .inspector {
-  background: #ffffff;
-  border: 1px solid #d0d7de;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
   padding: 12px;
-  color: #1f2328;
+  color: var(--color-text-primary);
   font: 500 0.84rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -81,7 +81,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   padding: 8px 0;
-  border-top: 1px solid #eaedf0;
+  border-top: 1px solid var(--color-border-muted);
 }
 
 .row:first-of-type {
@@ -99,11 +99,16 @@ input[type="color"] {
 button {
   margin-top: 10px;
   width: 100%;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  background: #f6f8fa;
+  background: var(--color-button-bg);
+  color: var(--color-text-primary);
   padding: 8px 10px;
   cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-button-hover);
 }
 
 button:disabled {
