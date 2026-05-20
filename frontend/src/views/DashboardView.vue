@@ -83,6 +83,8 @@ const templateMenuPosition = ref({ x: 0, y: 0 });
 const templateActionLoadingFor = ref<string | null>(null);
 
 const isCreateDocumentOpen = ref(false);
+const templatePickerSearch = ref("");
+const templatePickerFilter = ref<"all" | "private" | "shared">("all");
 const isCreateTemplateOpen = ref(false);
 const templateSourceDoc = ref<DocTile | null>(null);
 const templateFormName = ref("");
@@ -253,6 +255,16 @@ const emptyStateText = computed(() =>
     ? "Créez un document pour commencer."
     : "Les nouveaux documents seront créés dans ce répertoire.",
 );
+const filteredTemplateChoices = computed(() => {
+  const query = templatePickerSearch.value.trim().toLocaleLowerCase("fr-FR");
+  return templates.value.filter((template) => {
+    if (templatePickerFilter.value !== "all" && template.visibility !== templatePickerFilter.value) return false;
+    if (!query) return true;
+    return `${template.name} ${template.description} ${template.createdBy?.displayName ?? ""} ${template.createdBy?.email ?? ""}`
+      .toLocaleLowerCase("fr-FR")
+      .includes(query);
+  });
+});
 const shouldShowDrawerOverlay = computed(() => isMobile.value && isDirectoriesOpen.value);
 const directoriesPanelClasses = computed(() => ({
   "is-mobile": isMobile.value,
@@ -516,6 +528,8 @@ function workspaceLocation(path: string) {
 
 function openCreateDocumentDialog() {
   isCreateDocumentOpen.value = true;
+  templatePickerSearch.value = "";
+  templatePickerFilter.value = "all";
   errorMessage.value = "";
 }
 
@@ -1847,22 +1861,56 @@ onUnmounted(() => {
     <section class="dialog-card template-picker-dialog">
       <h3>Nouveau document</h3>
       <p class="dialog-text">Choisir un document vierge ou un template.</p>
+      <div class="template-picker-tools">
+        <label class="template-search-field">
+          <span>Rechercher</span>
+          <input v-model="templatePickerSearch" type="search" placeholder="Nom, description, auteur..." />
+        </label>
+        <div class="template-filter-tabs" role="tablist" aria-label="Filtrer les templates">
+          <button type="button" :class="{ active: templatePickerFilter === 'all' }" @click="templatePickerFilter = 'all'">Tous</button>
+          <button type="button" :class="{ active: templatePickerFilter === 'private' }" @click="templatePickerFilter = 'private'">Privés</button>
+          <button type="button" :class="{ active: templatePickerFilter === 'shared' }" @click="templatePickerFilter = 'shared'">Partagés</button>
+        </div>
+      </div>
       <div class="template-picker-grid">
-        <button type="button" class="template-choice-card" :disabled="creating" @click="createDocument">
-          <span class="create-plus">+</span>
-          <strong>Document vierge</strong>
+        <button type="button" class="template-choice-card blank-template-choice" :disabled="creating" @click="createDocument">
+          <span class="template-choice-thumb blank-template-thumb">
+            <span class="template-choice-plus">+</span>
+          </span>
+          <span class="template-choice-body">
+            <strong>Document vierge</strong>
+            <span>Créer sans modèle</span>
+          </span>
         </button>
         <button
-          v-for="template in templates"
+          v-for="template in filteredTemplateChoices"
           :key="template.id"
           type="button"
           class="template-choice-card"
           :disabled="templateActionLoadingFor === template.id"
           @click="createDocumentFromTemplate(template)"
         >
-          <strong>{{ template.name }}</strong>
-          <span>{{ template.description || templateVisibilityLabel(template) }}</span>
+          <span class="template-choice-thumb">
+            <img
+              v-if="getSvgThumbnailPayload(template.thumbnailJson)"
+              :src="svgToDataUrl(getSvgThumbnailPayload(template.thumbnailJson)!.svg)"
+              alt="Miniature du template"
+            />
+            <span v-else class="template-choice-placeholder">
+              <font-awesome-icon icon="clone" />
+            </span>
+          </span>
+          <span class="template-choice-body">
+            <span class="template-choice-title-row">
+              <strong>{{ template.name }}</strong>
+              <span class="template-choice-badge" :class="template.visibility">{{ templateVisibilityLabel(template) }}</span>
+            </span>
+            <span class="template-choice-description">{{ template.description || `par ${templateAuthorLabel(template)}` }}</span>
+          </span>
         </button>
+        <div v-if="templates.length > 0 && filteredTemplateChoices.length === 0" class="template-picker-empty">
+          Aucun template ne correspond à ce filtre.
+        </div>
       </div>
       <div class="dialog-actions">
         <button type="button" class="ghost-btn" @click="closeCreateDocumentDialog">Annuler</button>
@@ -2854,44 +2902,218 @@ onUnmounted(() => {
 }
 
 .template-picker-dialog {
-  width: min(680px, calc(100% - 24px));
+  width: min(820px, calc(100% - 24px));
+}
+
+.template-picker-tools {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.template-search-field {
+  display: grid;
+  gap: 4px;
+}
+
+.template-search-field span {
+  color: var(--color-text-secondary);
+  font: 600 0.72rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-search-field input {
+  height: 34px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  padding: 0 10px;
+  font: 500 0.82rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-filter-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 9px;
+  background: var(--color-bg-subtle);
+  padding: 3px;
+}
+
+.template-filter-tabs button {
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: 0 9px;
+  cursor: pointer;
+  font: 700 0.72rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-filter-tabs button.active {
+  background: var(--color-bg-selected-soft);
+  color: var(--color-text-accent);
 }
 
 .template-picker-grid {
-  max-height: min(420px, 60dvh);
+  max-height: min(540px, 64dvh);
   overflow: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  padding-right: 2px;
+}
+
+.template-picker-empty {
+  min-height: 188px;
+  border: 1px dashed var(--color-border-default);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  text-align: center;
+  font: 600 0.82rem/1.3 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .template-choice-card {
-  min-height: 92px;
+  min-height: 188px;
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  background: var(--color-bg-subtle);
+  background: var(--color-bg-elevated);
   color: var(--color-text-primary);
-  padding: 10px;
+  padding: 0;
   display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 6px;
+  grid-template-rows: 118px minmax(0, 1fr);
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 70%, transparent);
 }
 
 .template-choice-card:hover:not(:disabled) {
   border-color: var(--color-border-primary);
-  background: var(--color-bg-hover);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.template-choice-thumb {
+  min-width: 0;
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.template-choice-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.blank-template-thumb {
+  background:
+    linear-gradient(var(--color-border-muted) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border-muted) 1px, transparent 1px),
+    var(--color-bg-subtle);
+  background-size: 18px 18px;
+}
+
+.template-choice-plus {
+  width: 58px;
+  height: 58px;
+  border: 1px solid var(--color-border-selected);
+  border-radius: 14px;
+  background: var(--color-bg-selected-soft);
+  color: var(--color-text-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 2.8rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-choice-placeholder {
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.template-choice-body {
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.template-choice-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .template-choice-card strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: 700 0.84rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.template-choice-card span {
+.template-choice-card .template-choice-description {
   color: var(--color-text-muted);
   font: 500 0.74rem/1.25 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-choice-badge {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font: 700 0.62rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-choice-badge.private {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+}
+
+.template-choice-badge.shared {
+  background: var(--color-bg-selected-soft);
+  border-color: var(--color-border-selected);
+  color: var(--color-text-accent);
+}
+
+@media (max-width: 720px) {
+  .template-picker-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .template-filter-tabs {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .template-filter-tabs button {
+    flex: 1;
+  }
 }
 
 .dialog-color-field input[type="color"] {
