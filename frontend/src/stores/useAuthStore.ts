@@ -34,6 +34,7 @@ const state = reactive<AuthState>({
 });
 
 let refreshPromise: Promise<boolean> | null = null;
+let authRedirectInProgress = false;
 
 function syncThemePreference(user: AuthUser | null) {
   const theme = useThemeStore();
@@ -111,6 +112,16 @@ function clearSession() {
   state.refreshToken = "";
   state.user = null;
   persist();
+}
+
+function redirectToLogin() {
+  if (authRedirectInProgress || typeof window === "undefined") return;
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (window.location.pathname === "/login" || window.location.pathname === "/auth/callback") return;
+  authRedirectInProgress = true;
+  const loginUrl = new URL("/login", window.location.origin);
+  loginUrl.searchParams.set("redirect", currentPath || "/dashboard");
+  window.location.assign(loginUrl.toString());
 }
 
 function setUser(user: AuthUser | null) {
@@ -193,6 +204,7 @@ async function apiRequest<T>(path: string, options?: { method?: string; body?: u
       return apiRequest<T>(path, { ...options, retryOn401: false });
     }
     clearSession();
+    redirectToLogin();
   }
 
   const data = await parseResponse(response);
