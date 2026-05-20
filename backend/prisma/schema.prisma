@@ -13,6 +13,11 @@ enum ThemePreference {
   SYSTEM
 }
 
+enum TemplateVisibility {
+  PRIVATE
+  SHARED
+}
+
 model User {
   id                    String                   @id @default(cuid())
   email                 String                   @unique
@@ -27,6 +32,7 @@ model User {
   archivedDocs          DocumentArchivePreference[]
   folders               Folder[]
   documentFolderPrefs   DocumentFolderPreference[]
+  documentTemplates     DocumentTemplate[]
 }
 
 model Document {
@@ -45,6 +51,23 @@ model Document {
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId, updatedAt])
+}
+
+model DocumentTemplate {
+  id            String             @id @default(cuid())
+  createdById   String
+  name          String
+  description   String             @default("")
+  visibility    TemplateVisibility @default(PRIVATE)
+  contentJson   Json
+  thumbnailJson Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById, updatedAt])
+  @@index([visibility, updatedAt])
 }
 
 model Folder {

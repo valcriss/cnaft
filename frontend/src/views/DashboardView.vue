@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import UserAccountMenu from "../components/auth/UserAccountMenu.vue";
 import { ApiError, useAuthStore } from "../stores/useAuthStore";
 import { buildFolderBreadcrumbSegments, getReadableTextColor } from "./dashboard/breadcrumb";
@@ -44,22 +44,65 @@ type FolderApiItem = {
   sortIndex: number;
 };
 
+type TemplateTile = {
+  id: string;
+  name: string;
+  description: string;
+  visibility: "private" | "shared";
+  thumbnailJson: unknown;
+  updatedAt: string;
+  createdById: string;
+  canEdit: boolean;
+  createdBy?: {
+    displayName: string;
+    email: string;
+  };
+};
+
 const ALL_FOLDERS_ID = "__all__";
 const UNASSIGNED_FOLDERS_ID = "__unassigned__";
+const TEMPLATES_ID = "__templates__";
 const DND_DEBUG = false;
 
 const auth = useAuthStore();
+const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
 const creating = ref(false);
 const errorMessage = ref("");
 const docs = ref<DocTile[]>([]);
+const templates = ref<TemplateTile[]>([]);
 const nowTs = ref(Date.now());
 const includeArchived = ref(false);
 const isFilterMenuOpen = ref(false);
 const docMenuOpenFor = ref<string | null>(null);
 const docMenuPosition = ref({ x: 0, y: 0 });
 const actionLoadingFor = ref<string | null>(null);
+const templateMenuOpenFor = ref<string | null>(null);
+const templateMenuPosition = ref({ x: 0, y: 0 });
+const templateActionLoadingFor = ref<string | null>(null);
+
+const isCreateDocumentOpen = ref(false);
+const isCreateTemplateOpen = ref(false);
+const templateSourceDoc = ref<DocTile | null>(null);
+const templateFormName = ref("");
+const templateFormDescription = ref("");
+const templateFormVisibility = ref<"private" | "shared">("private");
+const templateFormSaving = ref(false);
+const templateFormError = ref("");
+
+const isRenameTemplateOpen = ref(false);
+const renameTemplate = ref<TemplateTile | null>(null);
+const renameTemplateName = ref("");
+const renameTemplateDescription = ref("");
+const renameTemplateVisibility = ref<"private" | "shared">("private");
+const renameTemplateSaving = ref(false);
+const renameTemplateError = ref("");
+
+const isDeleteTemplateOpen = ref(false);
+const deleteTemplate = ref<TemplateTile | null>(null);
+const deleteTemplateSaving = ref(false);
+const deleteTemplateError = ref("");
 
 const isRenameOpen = ref(false);
 const renameDoc = ref<DocTile | null>(null);
@@ -89,9 +132,10 @@ const addFolderValue = ref("");
 const addFolderColor = ref("#64748b");
 const addFolderError = ref("");
 
-const isDirectoriesOpen = ref(false);
+const isDirectoriesOpen = ref(true);
 const isMobile = ref(false);
-const selectedFolderId = ref<string>(ALL_FOLDERS_ID);
+const initialRouteFolder = typeof route.query.folder === "string" && route.query.folder.trim() ? route.query.folder : ALL_FOLDERS_ID;
+const selectedFolderId = ref<string>(initialRouteFolder);
 const draggingDocId = ref<string | null>(null);
 const dropTargetFolderId = ref<string | null>(null);
 const draggingFolderId = ref<string | null>(null);
@@ -111,6 +155,7 @@ let nowTickIntervalId: number | null = null;
 let folderPointerDragActive = false;
 let folderPointerDragCandidate: { folderId: string; startX: number; startY: number } | null = null;
 const activeDoc = computed(() => docs.value.find((doc) => doc.id === docMenuOpenFor.value) ?? null);
+const activeTemplate = computed(() => templates.value.find((template) => template.id === templateMenuOpenFor.value) ?? null);
 const activeFolder = computed(() => (folderMenuOpenFor.value ? folderRowsById.value.get(folderMenuOpenFor.value) ?? null : null));
 const folderRows = computed(() => {
   const rows: FolderRow[] = [];
@@ -164,6 +209,9 @@ const folderParentById = computed(() => {
   return parentById;
 });
 const folderBreadcrumbSegments = computed(() => {
+  if (selectedFolderId.value === TEMPLATES_ID) {
+    return [{ id: TEMPLATES_ID, label: "Templates", color: null, isActive: true }];
+  }
   return buildFolderBreadcrumbSegments({
     selectedFolderId: selectedFolderId.value,
     allFoldersId: ALL_FOLDERS_ID,
@@ -174,16 +222,37 @@ const folderBreadcrumbSegments = computed(() => {
   });
 });
 const visibleDocs = computed(() => {
+  if (selectedFolderId.value === TEMPLATES_ID) return [];
   if (selectedFolderId.value === ALL_FOLDERS_ID) return docs.value;
   if (selectedFolderId.value === UNASSIGNED_FOLDERS_ID) {
     return docs.value.filter((doc) => !docFolders.value[doc.id]);
   }
   return docs.value.filter((doc) => docFolders.value[doc.id] === selectedFolderId.value);
 });
+const unassignedDocCount = computed(() => docs.value.filter((doc) => !docFolders.value[doc.id]).length);
+const selectedFolderLabel = computed(() => {
+  if (selectedFolderId.value === ALL_FOLDERS_ID) return "Tous les documents";
+  if (selectedFolderId.value === UNASSIGNED_FOLDERS_ID) return "Non classés";
+  if (selectedFolderId.value === TEMPLATES_ID) return "Templates";
+  return folderNamesById.value.get(selectedFolderId.value) ?? "Répertoire";
+});
 const docCountLabel = computed(() => {
+  if (selectedFolderId.value === TEMPLATES_ID) return `${templates.value.length} template(s)`;
   if (selectedFolderId.value === ALL_FOLDERS_ID) return `${docs.value.length} document(s)`;
   return `${visibleDocs.value.length} / ${docs.value.length} document(s)`;
 });
+const emptyStateTitle = computed(() =>
+  selectedFolderId.value === TEMPLATES_ID ? "Aucun template" :
+  selectedFolderId.value === ALL_FOLDERS_ID ? "Aucun document" : `Aucun document dans ${selectedFolderLabel.value}`,
+);
+const emptyStateText = computed(() =>
+  selectedFolderId.value === TEMPLATES_ID
+    ? "Créez un template depuis le menu d'un document existant."
+    :
+  selectedFolderId.value === ALL_FOLDERS_ID
+    ? "Créez un document pour commencer."
+    : "Les nouveaux documents seront créés dans ce répertoire.",
+);
 const shouldShowDrawerOverlay = computed(() => isMobile.value && isDirectoriesOpen.value);
 const directoriesPanelClasses = computed(() => ({
   "is-mobile": isMobile.value,
@@ -417,6 +486,43 @@ async function loadDocuments() {
   }
 }
 
+async function loadTemplates() {
+  try {
+    const data = await auth.apiRequest<{ templates: TemplateTile[] }>("/document-templates", { auth: true });
+    templates.value = data.templates;
+  } catch (error) {
+    errorMessage.value = mapApiError(error);
+  }
+}
+
+function selectedRealFolderId() {
+  return folderNamesById.value.has(selectedFolderId.value) ? selectedFolderId.value : null;
+}
+
+function dashboardReturnPath() {
+  const query = new URLSearchParams();
+  query.set("folder", selectedFolderId.value);
+  return `/dashboard?${query.toString()}`;
+}
+
+function workspaceLocation(path: string) {
+  return {
+    path,
+    query: {
+      from: dashboardReturnPath(),
+    },
+  };
+}
+
+function openCreateDocumentDialog() {
+  isCreateDocumentOpen.value = true;
+  errorMessage.value = "";
+}
+
+function closeCreateDocumentDialog() {
+  isCreateDocumentOpen.value = false;
+}
+
 async function createDocument() {
   creating.value = true;
   errorMessage.value = "";
@@ -436,7 +542,12 @@ async function createDocument() {
         contentJson: initial,
       },
     });
-    await router.push(`/documents/${data.document.id}`);
+    const folderId = selectedRealFolderId();
+    if (folderId) {
+      await moveDocumentToFolder(data.document.id, folderId);
+    }
+    closeCreateDocumentDialog();
+    await router.push(workspaceLocation(`/documents/${data.document.id}`));
   } catch (error) {
     errorMessage.value = mapApiError(error);
   } finally {
@@ -444,8 +555,29 @@ async function createDocument() {
   }
 }
 
+async function createDocumentFromTemplate(template: TemplateTile) {
+  templateActionLoadingFor.value = template.id;
+  errorMessage.value = "";
+  try {
+    const data = await auth.apiRequest<{ document: { id: string } }>(`/document-templates/${template.id}/create-document`, {
+      method: "POST",
+      auth: true,
+      body: {
+        folderId: selectedRealFolderId(),
+      },
+    });
+    closeCreateDocumentDialog();
+    closeTemplateMenu();
+    await router.push(workspaceLocation(`/documents/${data.document.id}`));
+  } catch (error) {
+    errorMessage.value = mapApiError(error);
+  } finally {
+    templateActionLoadingFor.value = null;
+  }
+}
+
 function openDocument(id: string) {
-  router.push(`/documents/${id}`);
+  router.push(workspaceLocation(`/documents/${id}`));
 }
 
 function formatDate(value: string) {
@@ -503,6 +635,25 @@ function toggleDocMenu(docId: string, event: MouseEvent) {
 
 function closeDocMenu() {
   docMenuOpenFor.value = null;
+}
+
+function toggleTemplateMenu(templateId: string, event: MouseEvent) {
+  if (templateMenuOpenFor.value === templateId) {
+    templateMenuOpenFor.value = null;
+    return;
+  }
+
+  const target = event.currentTarget as HTMLElement | null;
+  const rect = target?.getBoundingClientRect();
+  templateMenuPosition.value = {
+    x: rect ? rect.right : event.clientX,
+    y: rect ? rect.bottom + 6 : event.clientY + 6,
+  };
+  templateMenuOpenFor.value = templateId;
+}
+
+function closeTemplateMenu() {
+  templateMenuOpenFor.value = null;
 }
 
 function openFolderContextMenu(folder: FolderRow, event: MouseEvent) {
@@ -845,6 +996,27 @@ function folderNameForDoc(docId: string) {
   return folderNamesById.value.get(folderId) ?? "Sans dossier";
 }
 
+function folderBadgeStyleForDoc(docId: string) {
+  const folderId = docFolders.value[docId];
+  if (!folderId) return {};
+  const color = folderColorsById.value.get(folderId);
+  if (!color) return {};
+  return {
+    backgroundColor: color,
+    borderColor: color,
+    color: getReadableTextColor(color),
+  };
+}
+
+function templateVisibilityLabel(template: TemplateTile) {
+  return template.visibility === "shared" ? "Partagé" : "Privé";
+}
+
+function templateAuthorLabel(template: TemplateTile) {
+  if (template.canEdit) return "Vous";
+  return template.createdBy?.displayName || template.createdBy?.email || "Utilisateur";
+}
+
 function folderHasDocuments(folderId: string) {
   const collectIds = (nodes: FolderNode[]): string[] => {
     for (const node of nodes) {
@@ -873,10 +1045,6 @@ function folderHasDocuments(folderId: string) {
     if (assignedFolderId && subtreeIds.has(assignedFolderId)) return true;
   }
   return false;
-}
-
-function folderRowCanDelete(folder: FolderRow) {
-  return !folder.hasChildren && !folderHasDocuments(folder.id);
 }
 
 function openDeleteFolderDialog(folder: FolderRow) {
@@ -970,10 +1138,23 @@ function pruneDocFolderMapping() {
 
 function syncViewportMode() {
   const wasMobile = isMobile.value;
-  isMobile.value = window.matchMedia("(max-width: 920px)").matches;
-  if (wasMobile && !isMobile.value) {
+  const nextIsMobile = window.matchMedia("(max-width: 920px)").matches;
+  isMobile.value = nextIsMobile;
+  if (!wasMobile && nextIsMobile) {
     isDirectoriesOpen.value = false;
+  } else if (wasMobile && !nextIsMobile) {
+    isDirectoriesOpen.value = true;
   }
+}
+
+function restoreSelectedFolderFromRoute() {
+  const folder = route.query.folder;
+  if (typeof folder !== "string") return;
+  if (folder === ALL_FOLDERS_ID || folder === UNASSIGNED_FOLDERS_ID || folder === TEMPLATES_ID || folderNamesById.value.has(folder)) {
+    selectedFolderId.value = folder;
+    return;
+  }
+  selectedFolderId.value = ALL_FOLDERS_ID;
 }
 
 async function toggleArchive(doc: DocTile) {
@@ -1001,6 +1182,140 @@ function openRenameDialog(doc: DocTile) {
   renameValue.value = doc.title;
   renameError.value = "";
   isRenameOpen.value = true;
+}
+
+function openCreateTemplateDialog(doc: DocTile) {
+  closeDocMenu();
+  if (doc.role !== "owner") return;
+  templateSourceDoc.value = doc;
+  templateFormName.value = doc.title;
+  templateFormDescription.value = "";
+  templateFormVisibility.value = "private";
+  templateFormError.value = "";
+  isCreateTemplateOpen.value = true;
+}
+
+function closeCreateTemplateDialog() {
+  isCreateTemplateOpen.value = false;
+  templateSourceDoc.value = null;
+  templateFormName.value = "";
+  templateFormDescription.value = "";
+  templateFormVisibility.value = "private";
+  templateFormError.value = "";
+}
+
+async function confirmCreateTemplate() {
+  if (!templateSourceDoc.value) return;
+  const name = templateFormName.value.trim();
+  if (!name) {
+    templateFormError.value = "Le nom du template est requis.";
+    return;
+  }
+  templateFormSaving.value = true;
+  templateFormError.value = "";
+  try {
+    await auth.apiRequest(`/documents/${templateSourceDoc.value.id}/template`, {
+      method: "POST",
+      auth: true,
+      body: {
+        name,
+        description: templateFormDescription.value.trim(),
+        visibility: templateFormVisibility.value,
+      },
+    });
+    await loadTemplates();
+    closeCreateTemplateDialog();
+    selectedFolderId.value = TEMPLATES_ID;
+  } catch (error) {
+    templateFormError.value = mapApiError(error);
+  } finally {
+    templateFormSaving.value = false;
+  }
+}
+
+function openRenameTemplateDialog(template: TemplateTile) {
+  closeTemplateMenu();
+  if (!template.canEdit) return;
+  renameTemplate.value = template;
+  renameTemplateName.value = template.name;
+  renameTemplateDescription.value = template.description;
+  renameTemplateVisibility.value = template.visibility;
+  renameTemplateError.value = "";
+  isRenameTemplateOpen.value = true;
+}
+
+function closeRenameTemplateDialog() {
+  isRenameTemplateOpen.value = false;
+  renameTemplate.value = null;
+  renameTemplateName.value = "";
+  renameTemplateDescription.value = "";
+  renameTemplateVisibility.value = "private";
+  renameTemplateError.value = "";
+}
+
+async function confirmRenameTemplate() {
+  if (!renameTemplate.value) return;
+  const name = renameTemplateName.value.trim();
+  if (!name) {
+    renameTemplateError.value = "Le nom du template est requis.";
+    return;
+  }
+  renameTemplateSaving.value = true;
+  renameTemplateError.value = "";
+  try {
+    await auth.apiRequest(`/document-templates/${renameTemplate.value.id}`, {
+      method: "PATCH",
+      auth: true,
+      body: {
+        name,
+        description: renameTemplateDescription.value.trim(),
+        visibility: renameTemplateVisibility.value,
+      },
+    });
+    await loadTemplates();
+    closeRenameTemplateDialog();
+  } catch (error) {
+    renameTemplateError.value = mapApiError(error);
+  } finally {
+    renameTemplateSaving.value = false;
+  }
+}
+
+function openDeleteTemplateDialog(template: TemplateTile) {
+  closeTemplateMenu();
+  if (!template.canEdit) return;
+  deleteTemplate.value = template;
+  deleteTemplateError.value = "";
+  isDeleteTemplateOpen.value = true;
+}
+
+function closeDeleteTemplateDialog() {
+  isDeleteTemplateOpen.value = false;
+  deleteTemplate.value = null;
+  deleteTemplateError.value = "";
+}
+
+async function confirmDeleteTemplate() {
+  if (!deleteTemplate.value) return;
+  deleteTemplateSaving.value = true;
+  deleteTemplateError.value = "";
+  try {
+    await auth.apiRequest(`/document-templates/${deleteTemplate.value.id}`, {
+      method: "DELETE",
+      auth: true,
+    });
+    await loadTemplates();
+    closeDeleteTemplateDialog();
+  } catch (error) {
+    deleteTemplateError.value = mapApiError(error);
+  } finally {
+    deleteTemplateSaving.value = false;
+  }
+}
+
+function editTemplate(template: TemplateTile) {
+  closeTemplateMenu();
+  router.push(workspaceLocation(`/templates/${template.id}`));
 }
 
 function closeRenameDialog() {
@@ -1075,6 +1390,9 @@ function onWindowClick(event: MouseEvent) {
   if (!target?.closest(".doc-actions-wrap") && !target?.closest(".doc-menu-global")) {
     closeDocMenu();
   }
+  if (!target?.closest(".template-actions-wrap") && !target?.closest(".template-menu-global")) {
+    closeTemplateMenu();
+  }
   if (!target?.closest(".folder-menu-global")) {
     closeFolderMenu();
   }
@@ -1083,7 +1401,9 @@ function onWindowClick(event: MouseEvent) {
 onMounted(async () => {
   syncViewportMode();
   await loadFolders();
+  restoreSelectedFolderFromRoute();
   await loadDocuments();
+  await loadTemplates();
   nowTickIntervalId = window.setInterval(() => {
     nowTs.value = Date.now();
   }, 10_000);
@@ -1116,9 +1436,15 @@ onUnmounted(() => {
 
       <p v-if="errorMessage" class="error-banner">{{ errorMessage }}</p>
 
-      <section class="dashboard-layout">
+      <section class="dashboard-layout" :class="{ 'directories-collapsed': !isDirectoriesOpen }">
         <aside class="directories-panel" :class="directoriesPanelClasses">
           <div class="directories-header">
+            <div v-if="isDirectoriesOpen" class="directories-heading">
+              <h2 class="directories-title">Répertoires</h2>
+              <button type="button" class="folder-add-inline" title="Ajouter un dossier" aria-label="Ajouter un dossier" @click="openAddFolderDialog">
+                <font-awesome-icon icon="plus" />
+              </button>
+            </div>
             <button
               type="button"
               class="directories-toggle"
@@ -1127,7 +1453,6 @@ onUnmounted(() => {
             >
               <font-awesome-icon :icon="isDirectoriesOpen ? 'chevron-left' : 'chevron-right'" />
             </button>
-            <h2 v-if="isDirectoriesOpen" class="directories-title">Répertoires</h2>
           </div>
 
           <div v-if="isDirectoriesOpen" class="directories-content">
@@ -1139,43 +1464,47 @@ onUnmounted(() => {
               @dragover="onFoldersTreeDragOver"
               @drop="onFoldersTreeDrop"
             >
-              <div class="folder-shortcuts">
-                <div class="folder-shortcuts-left">
-                  <button
-                    type="button"
-                    class="folder-icon-btn"
-                    :class="{
-                      selected: selectedFolderId === ALL_FOLDERS_ID,
-                      dropzone: dropTargetFolderId === ALL_FOLDERS_ID,
-                    }"
-                    title="Tous les documents"
-                    aria-label="Tous les documents"
-                    @click="selectFolder(ALL_FOLDERS_ID)"
-                    @dragover.prevent="onFolderDragOver(ALL_FOLDERS_ID, $event)"
-                    @drop="onFolderDrop(ALL_FOLDERS_ID, $event)"
-                  >
-                    <font-awesome-icon icon="layer-group" />
-                  </button>
-                  <button
-                    type="button"
-                    class="folder-icon-btn"
-                    :class="{
-                      selected: selectedFolderId === UNASSIGNED_FOLDERS_ID,
-                      dropzone: dropTargetFolderId === UNASSIGNED_FOLDERS_ID,
-                    }"
-                    title="Sans dossier"
-                    aria-label="Sans dossier"
-                    @click="selectFolder(UNASSIGNED_FOLDERS_ID)"
-                    @dragover.prevent="onFolderDragOver(UNASSIGNED_FOLDERS_ID, $event)"
-                    @drop="onFolderDrop(UNASSIGNED_FOLDERS_ID, $event)"
-                  >
-                    <font-awesome-icon icon="file" />
-                  </button>
-                </div>
-                <button type="button" class="folder-icon-btn folder-add-btn" title="Ajouter un dossier" aria-label="Ajouter un dossier" @click="openAddFolderDialog">
-                  <font-awesome-icon icon="circle-plus" />
-                </button>
-              </div>
+              <button
+                type="button"
+                class="folder-system-row"
+                :class="{
+                  selected: selectedFolderId === ALL_FOLDERS_ID,
+                  dropzone: dropTargetFolderId === ALL_FOLDERS_ID,
+                }"
+                @click="selectFolder(ALL_FOLDERS_ID)"
+                @dragover.prevent="onFolderDragOver(ALL_FOLDERS_ID, $event)"
+                @drop="onFolderDrop(ALL_FOLDERS_ID, $event)"
+              >
+                <span class="folder-system-icon"><font-awesome-icon icon="layer-group" /></span>
+                <span class="folder-system-label">Tous les documents</span>
+                <span class="folder-count">{{ docs.length }}</span>
+              </button>
+              <button
+                type="button"
+                class="folder-system-row"
+                :class="{
+                  selected: selectedFolderId === UNASSIGNED_FOLDERS_ID,
+                  dropzone: dropTargetFolderId === UNASSIGNED_FOLDERS_ID,
+                }"
+                @click="selectFolder(UNASSIGNED_FOLDERS_ID)"
+                @dragover.prevent="onFolderDragOver(UNASSIGNED_FOLDERS_ID, $event)"
+                @drop="onFolderDrop(UNASSIGNED_FOLDERS_ID, $event)"
+              >
+                <span class="folder-system-icon"><font-awesome-icon icon="file" /></span>
+                <span class="folder-system-label">Non classés</span>
+                <span class="folder-count">{{ unassignedDocCount }}</span>
+              </button>
+              <button
+                type="button"
+                class="folder-system-row"
+                :class="{ selected: selectedFolderId === TEMPLATES_ID }"
+                @click="selectFolder(TEMPLATES_ID)"
+              >
+                <span class="folder-system-icon"><font-awesome-icon icon="clone" /></span>
+                <span class="folder-system-label">Templates</span>
+                <span class="folder-count">{{ templates.length }}</span>
+              </button>
+              <div class="folder-section-label">Dossiers</div>
               <div
                 v-if="draggingFolderId"
                 class="folder-root-target"
@@ -1238,14 +1567,13 @@ onUnmounted(() => {
                   <span class="folder-row-name">{{ folder.name }}</span>
                 </button>
                 <button
-                  v-if="folderRowCanDelete(folder)"
                   type="button"
-                  class="folder-delete-btn"
-                  title="Supprimer le dossier"
-                  aria-label="Supprimer le dossier"
-                  @click.stop="openDeleteFolderDialog(folder)"
+                  class="folder-menu-btn"
+                  title="Actions du dossier"
+                  aria-label="Actions du dossier"
+                  @click.stop="openFolderContextMenu(folder, $event)"
                 >
-                  <font-awesome-icon icon="xmark" />
+                  <font-awesome-icon icon="ellipsis-vertical" />
                 </button>
               </div>
             </div>
@@ -1260,8 +1588,12 @@ onUnmounted(() => {
           <div class="tiles-toolbar">
             <div class="toolbar-left">
               <button v-if="isMobile" type="button" class="icon-btn" title="Répertoires" @click.stop="openDirectoriesPanel">
-                <span aria-hidden="true">|||</span>
+                <font-awesome-icon icon="folder" />
               </button>
+              <div class="folder-title-block">
+                <strong>{{ selectedFolderLabel }}</strong>
+                <span>{{ docCountLabel }}</span>
+              </div>
               <nav class="folder-breadcrumb" aria-label="Fil d'ariane des dossiers">
                 <template v-for="(segment, index) in folderBreadcrumbSegments" :key="segment.id">
                   <button
@@ -1293,8 +1625,57 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <section class="tiles-grid">
-            <button type="button" class="doc-tile create-tile" :disabled="creating" @click="createDocument">
+          <section v-if="selectedFolderId === TEMPLATES_ID && templates.length > 0" class="tiles-grid templates-grid">
+            <article
+              v-for="template in templates"
+              :key="template.id"
+              class="doc-tile template-tile"
+              role="button"
+              tabindex="0"
+              @click="editTemplate(template)"
+              @keydown.enter.prevent="editTemplate(template)"
+              @keydown.space.prevent="editTemplate(template)"
+            >
+              <div class="tile-thumb">
+                <img
+                  v-if="getSvgThumbnailPayload(template.thumbnailJson)"
+                  :src="svgToDataUrl(getSvgThumbnailPayload(template.thumbnailJson)!.svg)"
+                  alt="Miniature du template"
+                />
+                <pre v-else>{{ JSON.stringify(template.thumbnailJson ?? {}, null, 2).slice(0, 150) }}</pre>
+              </div>
+              <div class="tile-meta">
+                <div class="tile-meta-head">
+                  <strong :title="template.name">{{ template.name }}</strong>
+                  <div class="template-actions-wrap">
+                    <button
+                      type="button"
+                      class="doc-menu-btn"
+                      :disabled="templateActionLoadingFor === template.id"
+                      @click.stop="toggleTemplateMenu(template.id, $event)"
+                    >
+                      <font-awesome-icon icon="ellipsis-vertical" />
+                    </button>
+                  </div>
+                </div>
+                <small v-if="template.description" class="template-description">{{ template.description }}</small>
+                <small class="muted">par {{ templateAuthorLabel(template) }} - {{ formatDate(template.updatedAt) }}</small>
+                <small class="template-visibility-tag" :class="template.visibility">{{ templateVisibilityLabel(template) }}</small>
+              </div>
+            </article>
+          </section>
+
+          <section v-else-if="!loading && visibleDocs.length === 0" class="empty-docs-state">
+            <h2>{{ emptyStateTitle }}</h2>
+            <p>{{ emptyStateText }}</p>
+            <button v-if="selectedFolderId !== TEMPLATES_ID" type="button" class="doc-tile create-tile" :disabled="creating" @click="openCreateDocumentDialog">
+              <span class="create-plus">+</span>
+              <span class="create-label">Nouveau document</span>
+            </button>
+          </section>
+
+          <section v-else class="tiles-grid">
+            <button type="button" class="doc-tile create-tile" :disabled="creating" @click="openCreateDocumentDialog">
               <span class="create-plus">+</span>
               <span class="create-label">Nouveau document</span>
             </button>
@@ -1337,7 +1718,7 @@ onUnmounted(() => {
                 </div>
                 <small>{{ doc.role }} - {{ formatDate(doc.updatedAt) }}</small>
                 <small class="muted">maj: {{ Math.max(0, Math.floor((nowTs - new Date(doc.updatedAt).getTime()) / 60000)) }} min</small>
-                <small class="folder-tag">{{ folderNameForDoc(doc.id) }}</small>
+                <small class="folder-tag" :style="folderBadgeStyleForDoc(doc.id)">{{ folderNameForDoc(doc.id) }}</small>
                 <small v-if="doc.archivedByCurrentUser" class="archived-tag">Archivé</small>
               </div>
             </article>
@@ -1366,7 +1747,37 @@ onUnmounted(() => {
         <span class="leading"><font-awesome-icon icon="pen-to-square" /></span>
         <span>Renommer</span>
       </button>
+      <button v-if="activeDoc.role === 'owner'" type="button" class="doc-menu-item" @click.stop="openCreateTemplateDialog(activeDoc)">
+        <span class="leading"><font-awesome-icon icon="clone" /></span>
+        <span>Créer un template</span>
+      </button>
       <button v-if="activeDoc.role === 'owner'" type="button" class="doc-menu-item danger" @click.stop="openDeleteDialog(activeDoc)">
+        <span class="leading"><font-awesome-icon icon="trash" /></span>
+        <span>Supprimer</span>
+      </button>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="activeTemplate"
+      class="doc-menu template-menu-global"
+      role="menu"
+      :style="{ left: `${templateMenuPosition.x}px`, top: `${templateMenuPosition.y}px` }"
+    >
+      <button type="button" class="doc-menu-item" @click.stop="createDocumentFromTemplate(activeTemplate)">
+        <span class="leading"><font-awesome-icon icon="file" /></span>
+        <span>Créer un document</span>
+      </button>
+      <button v-if="activeTemplate.canEdit" type="button" class="doc-menu-item" @click.stop="editTemplate(activeTemplate)">
+        <span class="leading"><font-awesome-icon icon="pen-to-square" /></span>
+        <span>Editer</span>
+      </button>
+      <button v-if="activeTemplate.canEdit" type="button" class="doc-menu-item" @click.stop="openRenameTemplateDialog(activeTemplate)">
+        <span class="leading"><font-awesome-icon icon="font" /></span>
+        <span>Renommer</span>
+      </button>
+      <button v-if="activeTemplate.canEdit" type="button" class="doc-menu-item danger" @click.stop="openDeleteTemplateDialog(activeTemplate)">
         <span class="leading"><font-awesome-icon icon="trash" /></span>
         <span>Supprimer</span>
       </button>
@@ -1432,6 +1843,89 @@ onUnmounted(() => {
     </section>
   </div>
 
+  <div v-if="isCreateDocumentOpen" class="dialog-overlay" @click.self="closeCreateDocumentDialog">
+    <section class="dialog-card template-picker-dialog">
+      <h3>Nouveau document</h3>
+      <p class="dialog-text">Choisir un document vierge ou un template.</p>
+      <div class="template-picker-grid">
+        <button type="button" class="template-choice-card" :disabled="creating" @click="createDocument">
+          <span class="create-plus">+</span>
+          <strong>Document vierge</strong>
+        </button>
+        <button
+          v-for="template in templates"
+          :key="template.id"
+          type="button"
+          class="template-choice-card"
+          :disabled="templateActionLoadingFor === template.id"
+          @click="createDocumentFromTemplate(template)"
+        >
+          <strong>{{ template.name }}</strong>
+          <span>{{ template.description || templateVisibilityLabel(template) }}</span>
+        </button>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-btn" @click="closeCreateDocumentDialog">Annuler</button>
+      </div>
+    </section>
+  </div>
+
+  <div v-if="isCreateTemplateOpen" class="dialog-overlay" @click.self="closeCreateTemplateDialog">
+    <section class="dialog-card">
+      <h3>Créer un template</h3>
+      <label class="dialog-field">
+        <span>Nom du template</span>
+        <input v-model="templateFormName" type="text" maxlength="120" @keydown.enter.prevent="confirmCreateTemplate" />
+      </label>
+      <label class="dialog-field">
+        <span>Description</span>
+        <textarea v-model="templateFormDescription" maxlength="500" rows="3" />
+      </label>
+      <label class="dialog-field">
+        <span>Visibilité</span>
+        <select v-model="templateFormVisibility">
+          <option value="private">Privé</option>
+          <option value="shared">Partagé</option>
+        </select>
+      </label>
+      <p v-if="templateFormError" class="dialog-error">{{ templateFormError }}</p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-btn" :disabled="templateFormSaving" @click="closeCreateTemplateDialog">Annuler</button>
+        <button type="button" class="ghost-btn primary" :disabled="templateFormSaving" @click="confirmCreateTemplate">
+          {{ templateFormSaving ? "Création..." : "Créer" }}
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div v-if="isRenameTemplateOpen" class="dialog-overlay" @click.self="closeRenameTemplateDialog">
+    <section class="dialog-card">
+      <h3>Renommer le template</h3>
+      <label class="dialog-field">
+        <span>Nom du template</span>
+        <input v-model="renameTemplateName" type="text" maxlength="120" @keydown.enter.prevent="confirmRenameTemplate" />
+      </label>
+      <label class="dialog-field">
+        <span>Description</span>
+        <textarea v-model="renameTemplateDescription" maxlength="500" rows="3" />
+      </label>
+      <label class="dialog-field">
+        <span>Visibilité</span>
+        <select v-model="renameTemplateVisibility">
+          <option value="private">Privé</option>
+          <option value="shared">Partagé</option>
+        </select>
+      </label>
+      <p v-if="renameTemplateError" class="dialog-error">{{ renameTemplateError }}</p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-btn" :disabled="renameTemplateSaving" @click="closeRenameTemplateDialog">Annuler</button>
+        <button type="button" class="ghost-btn primary" :disabled="renameTemplateSaving" @click="confirmRenameTemplate">
+          {{ renameTemplateSaving ? "Validation..." : "Valider" }}
+        </button>
+      </div>
+    </section>
+  </div>
+
   <div v-if="isRenameOpen" class="dialog-overlay">
     <section class="dialog-card">
       <h3>Renommer le document</h3>
@@ -1462,6 +1956,24 @@ onUnmounted(() => {
         <button type="button" class="ghost-btn" :disabled="deleteSaving" @click="closeDeleteDialog">Annuler</button>
         <button type="button" class="ghost-btn danger" :disabled="deleteSaving" @click="confirmDelete">
           {{ deleteSaving ? "Suppression..." : "Supprimer" }}
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div v-if="isDeleteTemplateOpen" class="dialog-overlay" @click.self="closeDeleteTemplateDialog">
+    <section class="dialog-card">
+      <h3>Supprimer le template</h3>
+      <p class="dialog-text">
+        Confirmer la suppression de
+        <strong>{{ deleteTemplate?.name }}</strong>
+        ?
+      </p>
+      <p v-if="deleteTemplateError" class="dialog-error">{{ deleteTemplateError }}</p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-btn" :disabled="deleteTemplateSaving" @click="closeDeleteTemplateDialog">Annuler</button>
+        <button type="button" class="ghost-btn danger" :disabled="deleteTemplateSaving" @click="confirmDeleteTemplate">
+          {{ deleteTemplateSaving ? "Suppression..." : "Supprimer" }}
         </button>
       </div>
     </section>
@@ -1513,8 +2025,12 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 288px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.dashboard-layout.directories-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
 }
 
 .dashboard-head {
@@ -1550,8 +2066,9 @@ onUnmounted(() => {
 .tiles-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
 }
 
 .docs-pane {
@@ -1564,16 +2081,34 @@ onUnmounted(() => {
 
 .toolbar-left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  min-width: 0;
+}
+
+.folder-title-block {
+  min-width: 160px;
+  display: grid;
+  gap: 3px;
+}
+
+.folder-title-block strong {
+  color: var(--color-text-primary);
+  font: 700 1rem/1.15 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.folder-title-block span {
+  color: var(--color-text-muted);
+  font: 500 0.75rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .folder-breadcrumb {
   min-width: 0;
-  max-width: min(720px, calc(100vw - 220px));
+  max-width: min(640px, calc(100vw - 520px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 34px;
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
@@ -1606,12 +2141,10 @@ onUnmounted(() => {
 }
 
 .directories-panel {
-  width: 30px;
   border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: linear-gradient(180deg, var(--color-bg-subtle) 0%, var(--color-bg-soft) 100%);
+  background: var(--color-bg-subtle);
   transition:
-    width 240ms ease,
     transform 280ms ease,
     box-shadow 240ms ease;
   overflow: hidden;
@@ -1621,23 +2154,37 @@ onUnmounted(() => {
 }
 
 .directories-header {
-  height: 34px;
+  min-height: 44px;
   border-bottom: 1px solid var(--color-border-muted);
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+}
+
+.directories-panel:not(.is-open) .directories-header {
+  justify-content: center;
+  padding: 0;
 }
 
 .directories-panel.is-open {
-  width: 280px;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 60%, transparent);
+}
+
+.directories-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .directories-toggle {
   width: 30px;
-  height: 100%;
-  border: 0;
-  background: transparent;
+  height: 30px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-button-bg);
   color: var(--color-text-accent);
   cursor: pointer;
   display: grid;
@@ -1647,20 +2194,37 @@ onUnmounted(() => {
 
 .directories-title {
   margin: 0;
-  height: 100%;
   display: flex;
   align-items: center;
   color: var(--color-text-primary);
-  font: 700 0.88rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 700 0.92rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.folder-add-inline {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.folder-add-inline :deep(svg) {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 .directories-content {
   min-height: 0;
-  padding: 10px 8px;
-  background: var(--color-bg-elevated);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
+  padding: 8px;
+  background: var(--color-bg-subtle);
 }
 
 .directories-collapsed-label {
@@ -1684,7 +2248,7 @@ onUnmounted(() => {
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: 3px;
 }
 
 .folders-tree.root-dropzone {
@@ -1704,64 +2268,72 @@ onUnmounted(() => {
   background: var(--color-bg-info-soft);
 }
 
-.folder-shortcuts {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 0 6px;
-}
-
-.folder-shortcuts-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.folder-icon-btn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--color-border-default);
+.folder-system-row {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--color-bg-elevated);
+  background: transparent;
   color: var(--color-text-secondary);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 1px 8px 0;
+  text-align: left;
   cursor: pointer;
-  padding: 0;
 }
 
-.folder-icon-btn.selected {
+.folder-system-row.selected {
   background: var(--color-bg-selected-soft);
   border-color: var(--color-border-selected);
   color: var(--color-text-accent);
 }
 
-.folder-icon-btn.dropzone {
+.folder-system-row.dropzone {
   border-style: dashed;
   border-color: var(--color-primary);
   background: var(--color-bg-selected);
 }
 
-.folder-icon-btn :deep(svg) {
-  display: block;
+.folder-system-icon {
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
 }
 
-.folder-add-btn {
-  margin-left: 10px;
+.folder-system-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 0.78rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.folder-count {
+  color: var(--color-text-muted);
+  font: 600 0.68rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.folder-section-label {
+  margin: 9px 8px 4px;
+  color: var(--color-text-subtle);
+  font: 700 0.64rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-transform: uppercase;
 }
 
 .folder-row {
   --depth: 0;
-  min-height: 30px;
+  min-height: 34px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 16px;
-  column-gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr) 24px;
+  column-gap: 6px;
   align-items: center;
-  padding-right: 4px;
-  padding-left: calc(4px + var(--depth) * 14px);
+  padding-right: 8px;
+  padding-left: calc(7px + var(--depth) * 15px);
   position: relative;
 }
 .folder-row.root-row {
@@ -1862,42 +2434,52 @@ onUnmounted(() => {
   border: 0;
   background: transparent;
   text-align: left;
-  min-height: 28px;
+  min-height: 30px;
   color: var(--color-text-primary);
   cursor: pointer;
   padding: 0;
+  min-width: 0;
 }
 
 .folder-row-name {
-  font: 600 0.77rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: block;
+  font: 600 0.79rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folder-delete-btn {
-  width: 16px;
-  height: 16px;
+.folder-menu-btn {
+  width: 24px;
+  height: 24px;
   border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--color-text-subtle);
-  padding: 0;
-  margin: 0;
   cursor: pointer;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  opacity: 0;
   justify-self: end;
-  align-self: center;
 }
 
-.folder-delete-btn:hover {
-  color: var(--color-text-muted);
-}
-
-.folder-delete-btn :deep(svg) {
-  width: 11px;
-  height: 11px;
+.folder-menu-btn :deep(svg) {
+  width: 12px;
+  height: 12px;
   display: block;
+}
+
+.folder-row:hover .folder-menu-btn,
+.folder-menu-btn:focus-visible {
+  opacity: 1;
+}
+
+.folder-menu-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
 }
 
 .filter-menu-wrap {
@@ -1950,6 +2532,32 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 12px;
+}
+
+.empty-docs-state {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 10px;
+  padding: 28px 2px 12px;
+}
+
+.empty-docs-state h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font: 700 1rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.empty-docs-state p {
+  margin: 0 0 6px;
+  color: var(--color-text-muted);
+  font: 500 0.82rem/1.35 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.empty-docs-state .create-tile {
+  width: min(260px, 100%);
 }
 
 .doc-tile {
@@ -2039,6 +2647,13 @@ onUnmounted(() => {
   position: relative;
 }
 
+.template-actions-wrap {
+  position: relative;
+  min-width: 28px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .doc-menu-btn {
   width: 28px;
   height: 28px;
@@ -2115,6 +2730,31 @@ onUnmounted(() => {
   color: var(--color-text-subtle);
 }
 
+.template-description {
+  min-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-visibility-tag {
+  width: fit-content;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.template-visibility-tag.private {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
+}
+
+.template-visibility-tag.shared {
+  color: var(--color-text-accent);
+  background: var(--color-bg-selected-soft);
+  border-color: var(--color-border-selected);
+}
+
 .archived-tag {
   color: var(--color-text-warning);
   background: var(--color-bg-warning-soft);
@@ -2124,8 +2764,22 @@ onUnmounted(() => {
   padding: 0 8px;
 }
 
-.folder-tag {
-  color: var(--color-text-accent);
+.tile-meta small.folder-tag {
+  width: fit-content;
+  max-width: 100%;
+  height: 18px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  box-sizing: border-box;
+  display: inline-block;
+  padding: 0 8px;
+  font-size: 0.66rem;
+  line-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .loading-state {
@@ -2176,14 +2830,68 @@ onUnmounted(() => {
   font: 600 0.74rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.dialog-field input {
+.dialog-field input,
+.dialog-field select,
+.dialog-field textarea {
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  height: 34px;
-  padding: 0 10px;
   background: var(--color-bg-subtle);
   color: var(--color-text-primary);
   font: 500 0.82rem/1 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.dialog-field input,
+.dialog-field select {
+  height: 34px;
+  padding: 0 10px;
+}
+
+.dialog-field textarea {
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.3;
+}
+
+.template-picker-dialog {
+  width: min(680px, calc(100% - 24px));
+}
+
+.template-picker-grid {
+  max-height: min(420px, 60dvh);
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.template-choice-card {
+  min-height: 92px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+  padding: 10px;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-choice-card:hover:not(:disabled) {
+  border-color: var(--color-border-primary);
+  background: var(--color-bg-hover);
+}
+
+.template-choice-card strong {
+  font: 700 0.84rem/1.2 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.template-choice-card span {
+  color: var(--color-text-muted);
+  font: 500 0.74rem/1.25 "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .dialog-color-field input[type="color"] {
@@ -2250,6 +2958,18 @@ onUnmounted(() => {
 
   .dashboard-layout {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-layout.directories-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-breadcrumb {
+    max-width: calc(100vw - 112px);
+  }
+
+  .folder-title-block {
+    min-width: 0;
   }
 
   .directories-panel {

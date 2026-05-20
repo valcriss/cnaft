@@ -1,5 +1,6 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { canRead, canWrite, getDocumentRole } from "../services/documentAccess.js";
@@ -65,6 +66,11 @@ const renameTitleSchema = z.object({
 });
 const updateFolderSchema = z.object({
   folderId: z.string().min(1).nullable(),
+});
+const createTemplateFromDocumentSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).default(""),
+  visibility: z.enum(["private", "shared"]).default("private"),
 });
 
 router.get("/", async (req, res) => {
@@ -329,6 +335,63 @@ router.patch("/:id/folder", async (req, res) => {
   });
 
   res.json({ ok: true, folderId: folderId ?? null });
+});
+
+router.post("/:id/template", async (req, res) => {
+  const role = await getDocumentRole(req.params.id, req.auth!.userId);
+  if (role !== "owner") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const parsed = createTemplateFromDocumentSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const source = await prisma.document.findUnique({
+    where: { id: req.params.id },
+    select: {
+      contentJson: true,
+      thumbnailJson: true,
+    },
+  });
+  if (!source) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+
+  const template = await prisma.documentTemplate.create({
+    data: {
+      createdById: req.auth!.userId,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      visibility: parsed.data.visibility === "shared" ? "SHARED" : "PRIVATE",
+      contentJson: source.contentJson as Prisma.InputJsonValue,
+      ...(typeof source.thumbnailJson !== "undefined" && source.thumbnailJson !== null
+        ? { thumbnailJson: source.thumbnailJson }
+        : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      visibility: true,
+      thumbnailJson: true,
+      createdById: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  res.status(201).json({
+    template: {
+      ...template,
+      visibility: template.visibility === "SHARED" ? "shared" : "private",
+      canEdit: true,
+    },
+  });
 });
 
 router.delete("/:id", async (req, res) => {

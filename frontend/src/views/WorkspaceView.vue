@@ -34,6 +34,7 @@ let loadRequestSeq = 0;
 const THUMB_WIDTH = 320;
 const THUMB_HEIGHT = 180;
 
+const isTemplateMode = computed(() => route.name === "template-workspace");
 const documentId = computed(() => {
   const id = route.params.id;
   return typeof id === "string" && id.trim().length > 0 ? id : null;
@@ -96,6 +97,7 @@ function setupCollabFromQuery() {
 }
 
 function setupCollabWebSocket() {
+  if (isTemplateMode.value) return;
   const currentDocumentId = documentId.value;
   if (!currentDocumentId) return;
   const token = auth.state.accessToken;
@@ -146,6 +148,7 @@ function isCanvasDocumentState(value: unknown): value is {
 }
 
 async function joinByShareTokenFromUrl() {
+  if (isTemplateMode.value) return true;
   const shareToken = typeof route.query.share === "string" ? route.query.share.trim() : "";
   if (!shareToken) return true;
   try {
@@ -190,31 +193,40 @@ async function loadDocument() {
     snapToGrid: false,
   });
   try {
-    const data = await auth.apiRequest<{
-      document: {
-        title: string;
-        contentJson: unknown;
-      };
-      role: "owner" | "editor" | "viewer";
-    }>(`/documents/${id}`, { auth: true });
+    const data = isTemplateMode.value
+      ? await auth.apiRequest<{
+          template: {
+            name: string;
+            contentJson: unknown;
+            canEdit: boolean;
+          };
+        }>(`/document-templates/${id}`, { auth: true })
+      : await auth.apiRequest<{
+          document: {
+            title: string;
+            contentJson: unknown;
+          };
+          role: "owner" | "editor" | "viewer";
+        }>(`/documents/${id}`, { auth: true });
     if (requestSeq !== loadRequestSeq) return;
 
-    workspaceTitle.value = data.document.title || "Mon Canvas";
-    documentRole.value = data.role;
+    const payload = "template" in data ? data.template : data.document;
+    workspaceTitle.value = ("name" in payload ? payload.name : payload.title) || "Mon Canvas";
+    documentRole.value = "template" in data ? (data.template.canEdit ? "owner" : "viewer") : data.role;
 
-    if (isCanvasDocumentState(data.document.contentJson)) {
+    if (isCanvasDocumentState(payload.contentJson)) {
       canvasStore.replaceDocumentState({
-        elements: data.document.contentJson.elements as never[],
-        viewport: data.document.contentJson.viewport,
-        gridSize: typeof data.document.contentJson.gridSize === "number" ? data.document.contentJson.gridSize : 24,
-        showGrid: typeof data.document.contentJson.showGrid === "boolean" ? data.document.contentJson.showGrid : true,
+        elements: payload.contentJson.elements as never[],
+        viewport: payload.contentJson.viewport,
+        gridSize: typeof payload.contentJson.gridSize === "number" ? payload.contentJson.gridSize : 24,
+        showGrid: typeof payload.contentJson.showGrid === "boolean" ? payload.contentJson.showGrid : true,
         snapToGrid:
-          typeof data.document.contentJson.snapToGrid === "boolean" ? data.document.contentJson.snapToGrid : false,
+          typeof payload.contentJson.snapToGrid === "boolean" ? payload.contentJson.snapToGrid : false,
       });
     }
   } catch {
     if (requestSeq !== loadRequestSeq) return;
-    window.alert("Impossible de charger le document.");
+    window.alert(isTemplateMode.value ? "Impossible de charger le template." : "Impossible de charger le document.");
     router.replace("/dashboard");
   } finally {
     if (requestSeq === loadRequestSeq) {
@@ -227,11 +239,11 @@ async function loadDocument() {
 
 async function saveDocument() {
   const id = documentId.value;
-  if (!id || isLoadingDocument.value || savingInProgress) return;
+  if (!id || isLoadingDocument.value || savingInProgress || documentRole.value === "viewer") return;
   savingInProgress = true;
   try {
     const thumbnailSvg = buildThumbnailSvg();
-    await auth.apiRequest(`/documents/${id}`, {
+    await auth.apiRequest(isTemplateMode.value ? `/document-templates/${id}` : `/documents/${id}`, {
       method: "PATCH",
       auth: true,
       body: {
@@ -284,15 +296,15 @@ function buildThumbnailSvg() {
 
 async function saveTitle(nextValue: string) {
   const id = documentId.value;
-  if (!id) return;
+  if (!id || documentRole.value === "viewer") return;
   const nextTitle = nextValue.trim() || "Mon Canvas";
   if (nextTitle === workspaceTitle.value) return;
   isSavingTitle.value = true;
   try {
-    await auth.apiRequest(`/documents/${id}`, {
+    await auth.apiRequest(isTemplateMode.value ? `/document-templates/${id}` : `/documents/${id}`, {
       method: "PATCH",
       auth: true,
-      body: { title: nextTitle },
+      body: isTemplateMode.value ? { name: nextTitle } : { title: nextTitle },
     });
     workspaceTitle.value = nextTitle;
   } catch {
@@ -383,7 +395,7 @@ onMounted(async () => {
 
   if (route.query.collab === "mock") {
     setupCollabFromQuery();
-  } else {
+  } else if (!isTemplateMode.value) {
     setupCollabWebSocket();
   }
 
@@ -432,7 +444,8 @@ watch(
 );
 
 function goDashboard() {
-  router.push("/dashboard");
+  const from = route.query.from;
+  router.push(typeof from === "string" && from.startsWith("/dashboard") ? from : "/dashboard");
 }
 </script>
 
@@ -442,7 +455,7 @@ function goDashboard() {
       <div class="left-actions">
         <button type="button" class="ghost-btn" @click="goDashboard">Dashboard</button>
         <button
-          v-if="documentRole === 'owner'"
+          v-if="documentRole === 'owner' && !isTemplateMode"
           type="button"
           class="ghost-btn"
           @click="openShareDialog"
@@ -468,7 +481,7 @@ function goDashboard() {
         @title-commit="saveTitle"
       />
       <div v-if="shouldShowDocumentLoading" class="canvas-loading">
-        Chargement du document...
+        {{ isTemplateMode ? "Chargement du template..." : "Chargement du document..." }}
       </div>
     </div>
 
@@ -646,4 +659,3 @@ function goDashboard() {
   justify-content: flex-end;
 }
 </style>
-

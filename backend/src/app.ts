@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { config } from "./config.js";
 import authRouter from "./routes/auth.js";
+import documentTemplatesRouter from "./routes/documentTemplates.js";
 import documentsRouter from "./routes/documents.js";
 import foldersRouter from "./routes/folders.js";
 import { requireAuth } from "./middleware/auth.js";
@@ -32,6 +33,7 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/document-templates", requireAuth, documentTemplatesRouter);
   app.use("/api/documents", requireAuth, documentsRouter);
   app.use("/api/folders", requireAuth, foldersRouter);
 
