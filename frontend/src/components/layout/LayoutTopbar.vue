@@ -228,20 +228,58 @@ function exportJson() {
   isMenuOpen.value = false;
 }
 
-function triggerImportJson() {
+function triggerImportFile() {
   importInputRef.value?.click();
   isMenuOpen.value = false;
 }
 
-async function importJsonFromFile(event: Event) {
+function formatImportSummary(result: Extract<ReturnType<typeof canvas.importExternalDocument>, { ok: true }>) {
+  const typeLabels = new Map([
+    ["rectangle", "rectangle"],
+    ["text", "texte"],
+    ["note", "note"],
+    ["line", "ligne"],
+    ["image", "image"],
+    ["envelope", "enveloppe"],
+  ]);
+  const breakdown = Object.entries(result.stats.byType)
+    .filter(([, count]) => count > 0)
+    .map(([type, count]) => `${count} ${typeLabels.get(type) ?? type}`)
+    .join(", ");
+  const lines = [`Import ${result.format} réussi.`, `${result.stats.imported} élément(s) importé(s).`];
+  if (breakdown) {
+    lines.push(`Détail: ${breakdown}.`);
+  }
+  if (result.stats.ignored > 0) {
+    lines.push(`${result.stats.ignored} élément(s) ignoré(s).`);
+  }
+  if (result.warnings.length > 0) {
+    lines.push(`Avertissements: ${result.warnings.join(" ")}`);
+  }
+  return lines.join("\n");
+}
+
+async function importFileFromPicker(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+
+  if (canvas.state.elements.length > 0) {
+    const confirmed = window.confirm("L'import remplacera le contenu actuel du canvas. Continuer ?");
+    if (!confirmed) {
+      input.value = "";
+      return;
+    }
+  }
+
   const text = await file.text();
-  const result = canvas.importDocumentJson(text);
+  const result = canvas.importExternalDocument(file.name, text);
   if (!result.ok) {
     window.alert(result.error);
+    input.value = "";
+    return;
   }
+  window.alert(formatImportSummary(result));
   input.value = "";
 }
 
@@ -743,9 +781,9 @@ onUnmounted(() => {
           </div>
           <div class="menu-separator"></div>
           <div class="menu-group">
-            <button type="button" class="menu-item" title="Import JSON" @click="triggerImportJson">
+            <button type="button" class="menu-item" title="Importer un fichier" @click="triggerImportFile">
               <span class="menu-item-leading"><font-awesome-icon icon="upload" /></span>
-              <span>Importer JSON</span>
+              <span>Importer un fichier</span>
             </button>
             <div class="menu-separator"></div>
             <button type="button" class="menu-item" title="Export JSON" @click="exportJson">
@@ -783,7 +821,13 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <input ref="importInputRef" type="file" accept=".json,application/json" class="hidden-input" @change="importJsonFromFile" />
+    <input
+      ref="importInputRef"
+      type="file"
+      accept=".json,.drft,.excalidraw,application/json"
+      class="hidden-input"
+      @change="importFileFromPicker"
+    />
   </header>
 </template>
 
@@ -1211,4 +1255,3 @@ button:disabled {
   }
 }
 </style>
-

@@ -10,6 +10,7 @@ export type TextVerticalAlign = "top" | "middle" | "bottom";
 export type TextTransformMode = "none" | "uppercase" | "capitalize";
 export type ShadowType = "none" | "soft" | "offset" | "glow";
 export type EnvelopeType = "convex" | "rectangle" | "rounded";
+export type RectangleCornerPreset = 0 | 16 | 32;
 export type AnchorPosition =
   | "top"
   | "topRight"
@@ -33,10 +34,12 @@ type BaseCanvasElement = {
   strokeStyle?: StrokeStyle;
   locked?: boolean;
   shadowType?: ShadowType;
+  groupId?: string | null;
 };
 
 export type RectangleElement = BaseCanvasElement & {
   type: "rectangle";
+  cornerRadius: RectangleCornerPreset;
 };
 
 export type TextElement = BaseCanvasElement & {
@@ -166,6 +169,8 @@ const rectangleDefinition: ElementDefinition<RectangleElement> = {
     strokeStyle: overrides?.strokeStyle ?? "solid",
     locked: overrides?.locked ?? false,
     shadowType: overrides?.shadowType ?? "none",
+    groupId: overrides?.groupId ?? null,
+    cornerRadius: normalizeRectangleCornerRadius(overrides?.cornerRadius),
   }),
   getBounds: (element) => ({
     x: element.x,
@@ -193,6 +198,7 @@ const textDefinition: ElementDefinition<TextElement> = {
       strokeStyle: overrides?.strokeStyle ?? "solid",
       locked: overrides?.locked ?? false,
       shadowType: overrides?.shadowType ?? "none",
+      groupId: overrides?.groupId ?? null,
       text,
       fontSize,
       fontFamily: overrides?.fontFamily ?? "system-ui",
@@ -228,6 +234,7 @@ const noteDefinition: ElementDefinition<NoteElement> = {
     strokeStyle: overrides?.strokeStyle ?? "solid",
     locked: overrides?.locked ?? false,
     shadowType: overrides?.shadowType ?? "none",
+    groupId: overrides?.groupId ?? null,
     textColor: overrides?.textColor ?? "#1f2937",
     noteReactions: overrides?.noteReactions ?? {},
     text: overrides?.text ?? "Nouvelle note carree",
@@ -269,6 +276,7 @@ const lineDefinition: ElementDefinition<LineElement> = {
       strokeStyle: overrides?.strokeStyle ?? "solid",
       locked: overrides?.locked ?? false,
       shadowType: overrides?.shadowType ?? "none",
+      groupId: overrides?.groupId ?? null,
       lineStyle: overrides?.lineStyle ?? "solid",
       lineRoute: overrides?.lineRoute ?? "straight",
       lineArrow: overrides?.lineArrow ?? "none",
@@ -304,6 +312,7 @@ const imageDefinition: ElementDefinition<ImageElement> = {
     strokeStyle: overrides?.strokeStyle ?? "solid",
     locked: overrides?.locked ?? false,
     shadowType: overrides?.shadowType ?? "none",
+    groupId: overrides?.groupId ?? null,
     src: overrides?.src ?? "",
   }),
   getBounds: (element) => ({
@@ -328,6 +337,7 @@ const envelopeDefinition: ElementDefinition<EnvelopeElement> = {
     strokeStyle: overrides?.strokeStyle ?? "solid",
     locked: overrides?.locked ?? false,
     shadowType: overrides?.shadowType ?? "none",
+    groupId: overrides?.groupId ?? null,
     memberIds: overrides?.memberIds ?? [],
     envelopeType: overrides?.envelopeType ?? "convex",
     text: overrides?.text ?? "Enveloppe",
@@ -363,6 +373,11 @@ const definitions = {
 } as const;
 
 export const ELEMENT_TYPES = Object.keys(definitions) as ElementType[];
+
+export function normalizeRectangleCornerRadius(value: unknown): RectangleCornerPreset {
+  if (value === 16 || value === 32) return value;
+  return 0;
+}
 
 export function createCanvasElement(
   type: "rectangle",

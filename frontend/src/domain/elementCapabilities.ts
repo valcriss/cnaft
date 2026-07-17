@@ -5,6 +5,7 @@ export type ElementCapabilities = {
   fillLabel?: string;
   supportsTheme: boolean;
   supportsStroke: boolean;
+  supportsRectangleCorners: boolean;
   supportsNoteTextColor: boolean;
   supportsLineStyle: boolean;
   supportsTextType: boolean;
@@ -17,6 +18,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     fillLabel: "Fond",
     supportsTheme: true,
     supportsStroke: true,
+    supportsRectangleCorners: true,
     supportsNoteTextColor: false,
     supportsLineStyle: false,
     supportsTextType: false,
@@ -27,6 +29,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     fillLabel: "Couleur du texte",
     supportsTheme: false,
     supportsStroke: false,
+    supportsRectangleCorners: false,
     supportsNoteTextColor: false,
     supportsLineStyle: false,
     supportsTextType: true,
@@ -37,6 +40,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     fillLabel: "Fond",
     supportsTheme: true,
     supportsStroke: true,
+    supportsRectangleCorners: false,
     supportsNoteTextColor: true,
     supportsLineStyle: false,
     supportsTextType: true,
@@ -46,6 +50,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     supportsFill: false,
     supportsTheme: false,
     supportsStroke: true,
+    supportsRectangleCorners: false,
     supportsNoteTextColor: false,
     supportsLineStyle: true,
     supportsTextType: false,
@@ -55,6 +60,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     supportsFill: false,
     supportsTheme: false,
     supportsStroke: true,
+    supportsRectangleCorners: false,
     supportsNoteTextColor: false,
     supportsLineStyle: false,
     supportsTextType: false,
@@ -65,6 +71,7 @@ const ELEMENT_CAPABILITIES: Record<ElementType, ElementCapabilities> = {
     fillLabel: "Fond",
     supportsTheme: true,
     supportsStroke: true,
+    supportsRectangleCorners: false,
     supportsNoteTextColor: true,
     supportsLineStyle: false,
     supportsTextType: true,

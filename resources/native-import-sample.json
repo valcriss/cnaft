@@ -1,0 +1,43 @@
+{
+  "schema": "canvas-framework",
+  "version": 1,
+  "meta": {
+    "revision": 1,
+    "clientId": "fixture-client",
+    "exportedAt": "2026-07-17T12:00:00.000Z"
+  },
+  "state": {
+    "elements": [
+      {
+        "id": "fixture-note",
+        "type": "note",
+        "x": 48,
+        "y": 64,
+        "width": 180,
+        "height": 180,
+        "fill": "#fef08a",
+        "stroke": "#ca8a04",
+        "text": "Fixture native JSON",
+        "textColor": "#1f2937",
+        "fontSize": 20,
+        "fontFamily": "system-ui",
+        "textAlign": "center",
+        "textVerticalAlign": "middle",
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "lineHeight": 1.3,
+        "letterSpacing": 0,
+        "textTransform": "none"
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    },
+    "gridSize": 24,
+    "showGrid": true,
+    "snapToGrid": false
+  }
+}

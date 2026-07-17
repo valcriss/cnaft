@@ -5,6 +5,7 @@ import type {
   CanvasElement,
   EnvelopeType,
   ElementType,
+  RectangleCornerPreset,
   LineArrow,
   LineArrowStyle,
   LineRoute,
@@ -26,6 +27,10 @@ import {
   CONTEXT_MENU_ACTIONS,
   type ContextMenuActionDefinition,
 } from "../../config/contextMenuActions";
+import {
+  getSelectionContextElementType,
+  shouldPreserveMultiSelectionForContextMenu,
+} from "./contextMenuSelection";
 
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 type CanvasRenderMode = "display" | "export";
@@ -131,6 +136,11 @@ const THEMES = [
   { name: "Ciel", fill: "#bfdbfe", stroke: "#2563eb" },
   { name: "Rose", fill: "#fbcfe8", stroke: "#db2777" },
 ] as const;
+const RECTANGLE_CORNER_PRESETS: Array<{ label: string; value: RectangleCornerPreset }> = [
+  { label: "Carré", value: 0 },
+  { label: "Arrondi léger", value: 16 },
+  { label: "Arrondi fort", value: 32 },
+];
 const MAX_IMAGE_WIDTH = 360;
 const MAX_IMAGE_HEIGHT = 260;
 const NOTE_REACTION_EMOJIS = [
@@ -446,6 +456,15 @@ const selectedLineStyle = computed(() => {
     labelSize: line.labelSize ?? 12,
   };
 });
+const selectedRectangleStyle = computed(() => {
+  const rectangle = selectedElements.value.find(
+    (element): element is Extract<CanvasElement, { type: "rectangle" }> => element.type === "rectangle",
+  );
+  if (!rectangle) return null;
+  return {
+    cornerRadius: rectangle.cornerRadius ?? 0,
+  };
+});
 const elementContextActions = computed(() =>
   CONTEXT_MENU_ACTIONS.filter((action) => action.target === "element"),
 );
@@ -639,6 +658,15 @@ function normalizeRect(aX: number, aY: number, bX: number, bY: number): Rect {
 
 function rectsIntersect(a: Rect, b: Rect) {
   return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y);
+}
+
+function rectContainsRect(container: Rect, candidate: Rect) {
+  return (
+    candidate.x >= container.x &&
+    candidate.y >= container.y &&
+    candidate.x + candidate.width <= container.x + container.width &&
+    candidate.y + candidate.height <= container.y + container.height
+  );
 }
 
 function getTextBoundsFromValues(text: string, fontSize: number, fallbackWidth: number, fallbackHeight: number) {
@@ -2342,6 +2370,21 @@ function openContextMenu(
   };
 }
 
+function openSelectionContextMenu(clientX: number, clientY: number, worldX: number, worldY: number) {
+  const selection = selectedElements.value;
+  const representative = selection[0] ?? null;
+  openContextMenu(
+    "element",
+    clientX,
+    clientY,
+    worldX,
+    worldY,
+    representative?.id ?? null,
+    getSelectionContextElementType(selection),
+    selection.some((element) => !!element.locked || isLockedByRemote(element.id)),
+  );
+}
+
 function applyFillColor(color: string) {
   canvasStore.updateSelectedFill(color);
   closeContextMenu();
@@ -2365,6 +2408,11 @@ function applyStrokeStyle(style: StrokeStyle) {
 
 function applyTheme(fill: string, stroke: string) {
   canvasStore.updateSelectedTheme(fill, stroke);
+  closeContextMenu();
+}
+
+function applyRectangleCornerRadius(cornerRadius: RectangleCornerPreset) {
+  canvasStore.updateSelectedRectangleCornerRadius(cornerRadius);
   closeContextMenu();
 }
 
@@ -2508,6 +2556,16 @@ function pasteFromContext() {
   const x = maybeSnap(contextMenu.value.worldX);
   const y = maybeSnap(contextMenu.value.worldY);
   canvasStore.pasteAt(x, y);
+  closeContextMenu();
+}
+
+function groupFromContext() {
+  canvasStore.groupSelected();
+  closeContextMenu();
+}
+
+function ungroupFromContext() {
+  canvasStore.ungroupSelected();
   closeContextMenu();
 }
 
@@ -2696,6 +2754,8 @@ function applyDistribution(mode: "horizontal" | "vertical") {
 }
 
 function getContextActionLabel(action: ContextMenuActionDefinition) {
+  if (action.id === "group") return "Grouper";
+  if (action.id === "ungroup") return "Dégrouper";
   if (action.id === "duplicate") return "Dupliquer";
   if (action.id === "copy") return "Copier";
   if (action.id === "paste") return "Coller";
@@ -2714,12 +2774,16 @@ function getContextActionLabel(action: ContextMenuActionDefinition) {
 
 function isContextActionDisabled(action: ContextMenuActionDefinition) {
   if (action.target === "element" && isLockedContext.value && action.id !== "toggleLock") return true;
+  if (action.id === "group") return !canvasStore.canGroupSelection();
+  if (action.id === "ungroup") return !canvasStore.canUngroupSelection();
   if (action.id === "paste") return !canvasStore.hasClipboard();
   if (action.id === "toggleSnap") return !canvasStore.state.showGrid;
   return false;
 }
 
 function getContextActionIcon(action: ContextMenuActionDefinition) {
+  if (action.id === "group") return "object-group";
+  if (action.id === "ungroup") return "object-ungroup";
   if (action.id === "duplicate") return "clone";
   if (action.id === "copy") return "copy";
   if (action.id === "paste") return "paste";
@@ -2731,6 +2795,14 @@ function getContextActionIcon(action: ContextMenuActionDefinition) {
 }
 
 function runContextAction(action: ContextMenuActionDefinition) {
+  if (action.id === "group") {
+    groupFromContext();
+    return;
+  }
+  if (action.id === "ungroup") {
+    ungroupFromContext();
+    return;
+  }
   if (action.id === "duplicate") {
     duplicateFromContext();
     return;
@@ -2812,7 +2884,8 @@ function updateEnvelopeMembershipAfterDrag(draggedPrimaryIds: string[]) {
 }
 
 function startDraggingSelection(ids: string[], worldX: number, worldY: number) {
-  const expandedIds = getDragIdsWithEnvelopeMembers(ids).filter((id) => {
+  const effectiveIds = canvasStore.getEffectiveSelectionIds(ids);
+  const expandedIds = getDragIdsWithEnvelopeMembers(effectiveIds).filter((id) => {
     const element = canvasStore.state.elements.find((item) => item.id === id);
     return !!element && !element.locked;
   });
@@ -2829,7 +2902,7 @@ function startDraggingSelection(ids: string[], worldX: number, worldY: number) {
 
   draggingSelection = {
     ids: expandedIds,
-    primaryIds: [...ids],
+    primaryIds: [...effectiveIds],
     startPointerX: worldX,
     startPointerY: worldY,
     startPositions,
@@ -2841,7 +2914,7 @@ function startDraggingSelection(ids: string[], worldX: number, worldY: number) {
 }
 
 function startResizingSelection(handle: ResizeHandle, worldX: number, worldY: number) {
-  const ids = [...canvasStore.state.selectedIds];
+  const ids = canvasStore.getEffectiveSelectionIds([...canvasStore.state.selectedIds]);
   if (ids.length === 0) return;
 
   const selected = canvasStore.state.elements.filter((el) => ids.includes(el.id));
@@ -3231,7 +3304,7 @@ function updateMarqueeSelection() {
   );
 
   const ids = canvasStore.state.elements
-    .filter((element) => rectsIntersect(getElementRect(element), selectionRect))
+    .filter((element) => rectContainsRect(selectionRect, getElementRect(element)))
     .map((element) => element.id);
 
   if (marqueeSelection.additive) {
@@ -3579,6 +3652,7 @@ function onContextMenu(event: MouseEvent) {
   const sx = event.clientX - rect.left;
   const sy = event.clientY - rect.top;
   const world = screenToWorld(sx, sy);
+  const selectionBounds = getSelectionBounds(selectedElements.value);
   const titleHit = getEnvelopeTitleAt(world.x, world.y);
   if (titleHit) {
     if (!canvasStore.isSelected(titleHit.id)) {
@@ -3596,9 +3670,26 @@ function onContextMenu(event: MouseEvent) {
     );
     return;
   }
+
+  if (
+    shouldPreserveMultiSelectionForContextMenu(
+      selectedElements.value,
+      selectionBounds,
+      world.x,
+      world.y,
+    )
+  ) {
+    openSelectionContextMenu(event.clientX, event.clientY, world.x, world.y);
+    return;
+  }
+
   const hit = hitTest(world.x, world.y);
 
   if (hit) {
+    if (selectedElements.value.length > 1 && canvasStore.isSelected(hit.id)) {
+      openSelectionContextMenu(event.clientX, event.clientY, world.x, world.y);
+      return;
+    }
     if (!canvasStore.isSelected(hit.id)) {
       canvasStore.setSelected(hit.id);
     }
@@ -4108,6 +4199,42 @@ watch(
             <button v-for="theme in THEMES" :key="`theme-${theme.name}`" type="button" class="swatch"
               :title="theme.name" :style="{ backgroundColor: theme.fill, borderColor: theme.stroke }"
               @click="applyTheme(theme.fill, theme.stroke)"></button>
+          </div>
+        </div>
+        <div v-if="contextElementCapabilities?.supportsRectangleCorners" class="menu-section">
+          <div class="menu-submenu-row" :class="{ disabled: isLockedContext }">
+            <button type="button" class="menu-item menu-item-submenu" :disabled="isLockedContext">
+              <span class="menu-item-content">
+                <span class="menu-item-leading">
+                  <span
+                    class="rectangle-corner-icon menu-corner-icon"
+                    :class="{
+                      square: (selectedRectangleStyle?.cornerRadius ?? 0) === 0,
+                      soft: (selectedRectangleStyle?.cornerRadius ?? 0) === 16,
+                      strong: (selectedRectangleStyle?.cornerRadius ?? 0) === 32,
+                    }"
+                  ></span>
+                </span>
+                <span>Coins</span>
+              </span>
+              <span class="menu-item-arrow">›</span>
+            </button>
+            <div class="submenu">
+              <div class="submenu-actions">
+                <button
+                  v-for="preset in RECTANGLE_CORNER_PRESETS"
+                  :key="`rectangle-corner-${preset.value}`"
+                  type="button"
+                  class="menu-item"
+                  :class="{ active: selectedRectangleStyle?.cornerRadius === preset.value }"
+                  :disabled="isLockedContext"
+                  @click="applyRectangleCornerRadius(preset.value)"
+                >
+                  {{ preset.label }}
+                  <span v-if="selectedRectangleStyle?.cornerRadius === preset.value" class="menu-item-check">✓</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <div v-if="contextElementCapabilities?.supportsFill" class="menu-section">
@@ -5209,6 +5336,30 @@ canvas {
   margin-left: auto;
   color: var(--color-text-primary);
   font-weight: 700;
+}
+
+.rectangle-corner-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  background: transparent;
+}
+
+.menu-corner-icon {
+  color: var(--color-text-muted);
+}
+
+.rectangle-corner-icon.square {
+  border-radius: 0;
+}
+
+.rectangle-corner-icon.soft {
+  border-radius: 4px;
+}
+
+.rectangle-corner-icon.strong {
+  border-radius: 7px;
 }
 
 .menu-item:disabled {

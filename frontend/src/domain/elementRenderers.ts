@@ -3,6 +3,7 @@ import type {
   ImageElement,
   LineElement,
   NoteElement,
+  RectangleCornerPreset,
   RectangleElement,
   ShadowType,
   StrokeStyle,
@@ -88,13 +89,18 @@ function applyStrokeDash(ctx: CanvasRenderingContext2D, strokeStyle: StrokeStyle
   ctx.setLineDash([]);
 }
 
-const renderRectangle: ElementRenderer<RectangleElement> = (ctx, element) => {
+const renderRectangle: ElementRenderer<RectangleElement> = (ctx, element, helpers) => {
+  const cornerRadius: RectangleCornerPreset = element.cornerRadius ?? 0;
   // Fill with shadow, then stroke without shadow to avoid shadow bleeding inside.
   ctx.save();
   applyShadowPreset(ctx, element.shadowType);
   ctx.fillStyle = element.fill;
-  ctx.beginPath();
-  ctx.rect(element.x, element.y, element.width, element.height);
+  if (cornerRadius > 0) {
+    helpers.drawRoundedRect(ctx, element.x, element.y, element.width, element.height, cornerRadius);
+  } else {
+    ctx.beginPath();
+    ctx.rect(element.x, element.y, element.width, element.height);
+  }
   ctx.fill();
   ctx.restore();
 
@@ -102,8 +108,12 @@ const renderRectangle: ElementRenderer<RectangleElement> = (ctx, element) => {
   ctx.strokeStyle = element.stroke;
   ctx.lineWidth = 2;
   applyStrokeDash(ctx, element.strokeStyle);
-  ctx.beginPath();
-  ctx.rect(element.x, element.y, element.width, element.height);
+  if (cornerRadius > 0) {
+    helpers.drawRoundedRect(ctx, element.x, element.y, element.width, element.height, cornerRadius);
+  } else {
+    ctx.beginPath();
+    ctx.rect(element.x, element.y, element.width, element.height);
+  }
   ctx.stroke();
   ctx.restore();
 };

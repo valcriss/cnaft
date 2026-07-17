@@ -4,6 +4,8 @@ import {
   DEFAULT_TEXT_SIZE,
   createCanvasElement,
   type CanvasElement,
+  normalizeRectangleCornerRadius,
+  type RectangleCornerPreset,
   type StrokeStyle,
   type EnvelopeType,
   type ElementType,
@@ -27,6 +29,7 @@ import {
 import { LocalLoopbackAdapter, type CollabAdapter } from "../collab/collabAdapter";
 import { OP_SCHEMA_VERSION, OP_VERSION, isValidOperation, type Operation } from "../collab/operations";
 import { randomUUID } from "../utils/uuid";
+import { importDocumentContent, type DocumentImportResult } from "../import/documentImport";
 
 type Snapshot = {
   elements: CanvasElement[];
@@ -48,6 +51,7 @@ export type {
   LineArrowStyle,
   LineRoute,
   LineStyle,
+  RectangleCornerPreset,
   TextAlign,
   TextVerticalAlign,
   ShadowType,
@@ -233,6 +237,20 @@ function cloneElement(element: CanvasElement): CanvasElement {
   return clonePlain(element);
 }
 
+function normalizeGroupMembership(elements: CanvasElement[]) {
+  const counts = new Map<string, number>();
+  for (const element of elements) {
+    if (!element.groupId) continue;
+    counts.set(element.groupId, (counts.get(element.groupId) ?? 0) + 1);
+  }
+
+  for (const element of elements) {
+    if (element.groupId && (counts.get(element.groupId) ?? 0) < 2) {
+      element.groupId = null;
+    }
+  }
+}
+
 function createSnapshot(): Snapshot {
   return {
     elements: state.elements.map(cloneElement),
@@ -367,6 +385,9 @@ function buildInverseOperation(operation: Operation): Operation | null {
     if (typeof operation.payload.patch.stroke !== "undefined") inversePatch.stroke = element.stroke;
     if (typeof operation.payload.patch.strokeStyle !== "undefined") inversePatch.strokeStyle = element.strokeStyle;
     if (typeof operation.payload.patch.shadowType !== "undefined") inversePatch.shadowType = element.shadowType;
+    if (typeof operation.payload.patch.cornerRadius !== "undefined" && element.type === "rectangle") {
+      inversePatch.cornerRadius = element.cornerRadius;
+    }
     return makeHistoryOperation("element.patchStyle", { id: element.id, patch: inversePatch });
   }
 
@@ -437,6 +458,9 @@ function buildInverseOperation(operation: Operation): Operation | null {
     const inversePatch: Extract<Operation, { type: "element.patchData" }>["payload"]["patch"] = {};
     if (typeof operation.payload.patch.locked !== "undefined") {
       inversePatch.locked = element.locked;
+    }
+    if (typeof operation.payload.patch.groupId !== "undefined") {
+      inversePatch.groupId = element.groupId ?? null;
     }
     if (element.type === "envelope") {
       if (typeof operation.payload.patch.envelopeType !== "undefined") {
@@ -1285,6 +1309,9 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
     if (typeof patch.locked === "boolean") {
       element.locked = patch.locked;
     }
+    if (typeof patch.groupId !== "undefined") {
+      element.groupId = patch.groupId ?? null;
+    }
     if (element.type === "envelope") {
       if (typeof patch.envelopeType === "string") {
         element.envelopeType = patch.envelopeType;
@@ -1398,6 +1425,9 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
     if (typeof patch.stroke === "string") element.stroke = patch.stroke;
     if (typeof patch.strokeStyle === "string") element.strokeStyle = patch.strokeStyle;
     if (typeof patch.shadowType === "string") element.shadowType = patch.shadowType;
+    if (typeof patch.cornerRadius === "number" && element.type === "rectangle") {
+      element.cornerRadius = normalizeRectangleCornerRadius(patch.cornerRadius);
+    }
     if (!recordHistory) {
       markDocumentChanged();
     }
@@ -1679,6 +1709,7 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
         memberIds: element.memberIds.filter((id) => !idSet.has(id)),
       };
     });
+    normalizeGroupMembership(state.elements);
     removeLineAnchorsToDeleted(idSet);
     state.selectedIds = state.selectedIds.filter((id) => !idSet.has(id));
     updatePresenceSelection(state.selectedIds);
@@ -1808,6 +1839,7 @@ function broadcastDocumentStateForce() {
 
 function applyDocumentState(documentState: CanvasDocumentState) {
   state.elements = documentState.elements.map(cloneElement);
+  normalizeGroupMembership(state.elements);
   state.viewport = { ...documentState.viewport };
   state.gridSize = Math.max(4, Math.round((documentState.gridSize ?? 24) / 4) * 4);
   state.showGrid = documentState.showGrid;
@@ -1838,30 +1870,82 @@ function clearSelection() {
   updatePresenceSelection(state.selectedIds);
 }
 
+function getGroupMemberIds(groupId: string) {
+  return state.elements.filter((element) => element.groupId === groupId).map((element) => element.id);
+}
+
+function getElementGroupId(id: string) {
+  return state.elements.find((element) => element.id === id)?.groupId ?? null;
+}
+
+function expandIdsToWholeGroups(ids: string[]) {
+  const expanded = new Set(ids);
+  for (const id of ids) {
+    const groupId = getElementGroupId(id);
+    if (!groupId) continue;
+    for (const memberId of getGroupMemberIds(groupId)) {
+      expanded.add(memberId);
+    }
+  }
+  return Array.from(expanded);
+}
+
+function getEffectiveSelectionIds(ids: string[]) {
+  return expandIdsToWholeGroups(ids);
+}
+
+function getSelectionGroupId() {
+  if (state.selectedIds.length === 0) return null;
+  const ids = expandIdsToWholeGroups(state.selectedIds);
+  const firstGroupId = getElementGroupId(ids[0] ?? "");
+  if (!firstGroupId) return null;
+  const memberIds = getGroupMemberIds(firstGroupId);
+  if (memberIds.length < 2 || memberIds.length !== ids.length) return null;
+  const memberSet = new Set(memberIds);
+  return ids.every((id) => memberSet.has(id)) ? firstGroupId : null;
+}
+
+function canGroupSelection() {
+  const ids = expandIdsToWholeGroups(state.selectedIds);
+  if (ids.length < 2) return false;
+  const selected = state.elements.filter((element) => ids.includes(element.id));
+  return selected.length >= 2 && selected.every((element) => !element.locked && !element.groupId);
+}
+
+function canUngroupSelection() {
+  return !!getSelectionGroupId();
+}
+
 function setSelected(id: string | null) {
-  state.selectedIds = id ? [id] : [];
+  state.selectedIds = id ? expandIdsToWholeGroups([id]) : [];
   updatePresenceSelection(state.selectedIds);
 }
 
 function setSelectedMany(ids: string[]) {
-  state.selectedIds = Array.from(new Set(ids));
+  state.selectedIds = Array.from(new Set(expandIdsToWholeGroups(ids)));
   updatePresenceSelection(state.selectedIds);
 }
 
 function addSelected(id: string) {
-  if (state.selectedIds.includes(id)) return;
-  state.selectedIds = [...state.selectedIds, id];
+  const nextIds = expandIdsToWholeGroups([...state.selectedIds, id]);
+  if (nextIds.length === state.selectedIds.length && nextIds.every((item, index) => item === state.selectedIds[index])) {
+    return;
+  }
+  state.selectedIds = nextIds;
   updatePresenceSelection(state.selectedIds);
 }
 
 function toggleSelected(id: string) {
-  if (state.selectedIds.includes(id)) {
-    state.selectedIds = state.selectedIds.filter((selectedId) => selectedId !== id);
+  const groupId = getElementGroupId(id);
+  const ids = groupId ? getGroupMemberIds(groupId) : [id];
+  const allSelected = ids.every((memberId) => state.selectedIds.includes(memberId));
+  if (allSelected) {
+    state.selectedIds = state.selectedIds.filter((selectedId) => !ids.includes(selectedId));
     updatePresenceSelection(state.selectedIds);
     return;
   }
 
-  state.selectedIds = [...state.selectedIds, id];
+  state.selectedIds = expandIdsToWholeGroups([...state.selectedIds, ...ids]);
   updatePresenceSelection(state.selectedIds);
 }
 
@@ -2272,6 +2356,30 @@ function updateSelectedShadowType(shadowType: ShadowType) {
       clientId: state.clientId,
       type: "element.patchStyle",
       payload: { id: element.id, patch: { shadowType } },
+    });
+  }
+  dispatchBatch(operations);
+}
+
+function updateSelectedRectangleCornerRadius(cornerRadius: RectangleCornerPreset) {
+  if (state.selectedIds.length === 0) return;
+  const normalized = normalizeRectangleCornerRadius(cornerRadius);
+  const idSet = new Set(state.selectedIds);
+  const operations: Operation[] = [];
+  for (const element of state.elements) {
+    if (
+      !idSet.has(element.id) ||
+      element.locked ||
+      element.type !== "rectangle" ||
+      element.cornerRadius === normalized
+    ) {
+      continue;
+    }
+    operations.push({
+      opId: nextOperationId(),
+      clientId: state.clientId,
+      type: "element.patchStyle",
+      payload: { id: element.id, patch: { cornerRadius: normalized } },
     });
   }
   dispatchBatch(operations);
@@ -3164,7 +3272,7 @@ function resetView() {
 function deleteSelected() {
   if (state.selectedIds.length === 0) return;
 
-  const idSet = new Set(state.selectedIds);
+  const idSet = new Set(expandIdsToWholeGroups(state.selectedIds));
   const ids = state.elements.filter((el) => idSet.has(el.id) && !el.locked).map((el) => el.id);
   if (ids.length === 0) return;
 
@@ -3179,11 +3287,16 @@ function deleteSelected() {
 function duplicateSelected(offsetX = 24, offsetY = 24) {
   if (state.selectedIds.length === 0) return;
 
-  const selected = state.elements.filter((el) => state.selectedIds.includes(el.id) && !el.locked);
+  const selectedIds = expandIdsToWholeGroups(state.selectedIds);
+  const selected = state.elements.filter((el) => selectedIds.includes(el.id) && !el.locked);
   if (selected.length === 0) return;
   const idMap = new Map<string, string>();
+  const groupIdMap = new Map<string, string>();
   for (const element of selected) {
     idMap.set(element.id, randomUUID());
+    if (element.groupId && !groupIdMap.has(element.groupId)) {
+      groupIdMap.set(element.groupId, randomUUID());
+    }
   }
 
   const duplicated: CanvasElement[] = selected.map((el) => {
@@ -3194,6 +3307,7 @@ function duplicateSelected(offsetX = 24, offsetY = 24) {
         id: nextId,
         x: el.x + offsetX,
         y: el.y + offsetY,
+        groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
         x2: el.x2 + offsetX,
         y2: el.y2 + offsetY,
         startAnchor: el.startAnchor
@@ -3211,6 +3325,7 @@ function duplicateSelected(offsetX = 24, offsetY = 24) {
         id: nextId,
         x: el.x + offsetX,
         y: el.y + offsetY,
+        groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
       };
     }
     return {
@@ -3218,10 +3333,12 @@ function duplicateSelected(offsetX = 24, offsetY = 24) {
       id: nextId,
       x: el.x + offsetX,
       y: el.y + offsetY,
+      groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
       memberIds: el.memberIds.map((id) => idMap.get(id) ?? id),
     };
   });
 
+  normalizeGroupMembership(duplicated);
   beginInteraction();
   for (const element of duplicated) {
     dispatchOperation(
@@ -3241,7 +3358,8 @@ function duplicateSelected(offsetX = 24, offsetY = 24) {
 
 function copySelected() {
   if (state.selectedIds.length === 0) return;
-  const selected = state.elements.filter((el) => state.selectedIds.includes(el.id));
+  const selectedIds = expandIdsToWholeGroups(state.selectedIds);
+  const selected = state.elements.filter((el) => selectedIds.includes(el.id));
   clipboard = selected.map((el) => ({ ...el }));
 }
 
@@ -3264,8 +3382,12 @@ function pasteAt(worldX: number, worldY: number) {
   const dy = worldY - minY;
 
   const idMap = new Map<string, string>();
+  const groupIdMap = new Map<string, string>();
   for (const element of clipboard) {
     idMap.set(element.id, randomUUID());
+    if (element.groupId && !groupIdMap.has(element.groupId)) {
+      groupIdMap.set(element.groupId, randomUUID());
+    }
   }
 
   const pasted = clipboard.map((el) => {
@@ -3276,6 +3398,7 @@ function pasteAt(worldX: number, worldY: number) {
         id: nextId,
         x: el.x + dx,
         y: el.y + dy,
+        groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
         x2: el.x2 + dx,
         y2: el.y2 + dy,
         startAnchor: el.startAnchor
@@ -3293,6 +3416,7 @@ function pasteAt(worldX: number, worldY: number) {
         id: nextId,
         x: el.x + dx,
         y: el.y + dy,
+        groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
       };
     }
     return {
@@ -3300,10 +3424,12 @@ function pasteAt(worldX: number, worldY: number) {
       id: nextId,
       x: el.x + dx,
       y: el.y + dy,
+      groupId: el.groupId ? (groupIdMap.get(el.groupId) ?? null) : null,
       memberIds: el.memberIds.map((id) => idMap.get(id) ?? id),
     };
   });
 
+  normalizeGroupMembership(pasted);
   beginInteraction();
   for (const element of pasted) {
     dispatchOperation(
@@ -3325,7 +3451,7 @@ function bringSelectedToFront() {
   if (state.selectedIds.length === 0) return;
 
   const ids = state.elements
-    .filter((el) => state.selectedIds.includes(el.id) && !el.locked)
+    .filter((el) => expandIdsToWholeGroups(state.selectedIds).includes(el.id) && !el.locked)
     .map((el) => el.id);
   if (ids.length === 0) return;
   dispatchOperation({
@@ -3340,7 +3466,7 @@ function sendSelectedToBack() {
   if (state.selectedIds.length === 0) return;
 
   const ids = state.elements
-    .filter((el) => state.selectedIds.includes(el.id) && !el.locked)
+    .filter((el) => expandIdsToWholeGroups(state.selectedIds).includes(el.id) && !el.locked)
     .map((el) => el.id);
   if (ids.length === 0) return;
   dispatchOperation({
@@ -3355,7 +3481,7 @@ function bringSelectedForward() {
   if (state.selectedIds.length === 0 || state.elements.length < 2) return;
 
   const ids = state.elements
-    .filter((el) => state.selectedIds.includes(el.id) && !el.locked)
+    .filter((el) => expandIdsToWholeGroups(state.selectedIds).includes(el.id) && !el.locked)
     .map((el) => el.id);
   if (ids.length === 0) return;
   dispatchOperation({
@@ -3370,7 +3496,7 @@ function sendSelectedBackward() {
   if (state.selectedIds.length === 0 || state.elements.length < 2) return;
 
   const ids = state.elements
-    .filter((el) => state.selectedIds.includes(el.id) && !el.locked)
+    .filter((el) => expandIdsToWholeGroups(state.selectedIds).includes(el.id) && !el.locked)
     .map((el) => el.id);
   if (ids.length === 0) return;
   dispatchOperation({
@@ -3382,14 +3508,14 @@ function sendSelectedBackward() {
 }
 
 function selectAll() {
-  state.selectedIds = state.elements.map((el) => el.id);
+  state.selectedIds = expandIdsToWholeGroups(state.elements.map((el) => el.id));
   updatePresenceSelection(state.selectedIds);
 }
 
 function lockSelected() {
   if (state.selectedIds.length === 0) return;
 
-  const idSet = new Set(state.selectedIds);
+  const idSet = new Set(expandIdsToWholeGroups(state.selectedIds));
   const operations: Operation[] = [];
   for (const element of state.elements) {
     if (idSet.has(element.id) && !element.locked) {
@@ -3407,7 +3533,7 @@ function lockSelected() {
 function unlockSelected() {
   if (state.selectedIds.length === 0) return;
 
-  const idSet = new Set(state.selectedIds);
+  const idSet = new Set(expandIdsToWholeGroups(state.selectedIds));
   const operations: Operation[] = [];
   for (const element of state.elements) {
     if (idSet.has(element.id) && element.locked) {
@@ -3420,6 +3546,38 @@ function unlockSelected() {
     }
   }
   dispatchBatch(operations);
+}
+
+function groupSelected() {
+  if (!canGroupSelection()) return;
+
+  const groupId = randomUUID();
+  const operations = expandIdsToWholeGroups(state.selectedIds).map((id) => ({
+    opId: nextOperationId(),
+    clientId: state.clientId,
+    type: "element.patchData" as const,
+    payload: { id, patch: { groupId } },
+  }));
+  dispatchBatch(operations);
+  normalizeGroupMembership(state.elements);
+  state.selectedIds = getGroupMemberIds(groupId);
+  updatePresenceSelection(state.selectedIds);
+}
+
+function ungroupSelected() {
+  const groupId = getSelectionGroupId();
+  if (!groupId) return;
+
+  const operations = getGroupMemberIds(groupId).map((id) => ({
+    opId: nextOperationId(),
+    clientId: state.clientId,
+    type: "element.patchData" as const,
+    payload: { id, patch: { groupId: null } },
+  }));
+  dispatchBatch(operations);
+  normalizeGroupMembership(state.elements);
+  state.selectedIds = operations.map((operation) => operation.payload.id);
+  updatePresenceSelection(state.selectedIds);
 }
 
 function toggleGrid() {
@@ -3671,25 +3829,6 @@ function redo() {
   broadcastDocumentStateForce();
 }
 
-function normalizeElementFromImport(raw: CanvasElement): CanvasElement {
-  if (raw.type === "rectangle") {
-    return createCanvasElement("rectangle", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-  }
-  if (raw.type === "text") {
-    return createCanvasElement("text", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-  }
-  if (raw.type === "note") {
-    return createCanvasElement("note", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-  }
-  if (raw.type === "line") {
-    return createCanvasElement("line", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-  }
-  if (raw.type === "image") {
-    return createCanvasElement("image", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-  }
-  return createCanvasElement("envelope", { id: raw.id, x: raw.x, y: raw.y, overrides: raw });
-}
-
 function exportDocumentJson() {
   const documentPayload: VersionedCanvasDocument = {
     schema: DOCUMENT_SCHEMA,
@@ -3705,81 +3844,32 @@ function exportDocumentJson() {
 }
 
 function importDocumentJson(jsonText: string) {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    return { ok: false as const, error: "Le fichier JSON est invalide." };
+  const result = importDocumentContent("document.json", jsonText);
+  if (!result.ok) {
+    return result;
   }
-
-  if (!isObject(parsed)) {
-    return { ok: false as const, error: "Format de document invalide." };
-  }
-
-  if (parsed.schema !== DOCUMENT_SCHEMA) {
-    return { ok: false as const, error: "Schéma inconnu. Fichier non compatible." };
-  }
-  if (parsed.version !== DOCUMENT_VERSION) {
-    return {
-      ok: false as const,
-      error: `Version non supportée (${String(parsed.version)}). Version attendue: ${DOCUMENT_VERSION}.`,
-    };
-  }
-  if (!isObject(parsed.state)) {
-    return { ok: false as const, error: "Contenu du document invalide (state manquant)." };
-  }
-
-  const rawElements = parsed.state.elements;
-  const rawViewport = parsed.state.viewport;
-  const rawShowGrid = parsed.state.showGrid;
-  const rawSnapToGrid = parsed.state.snapToGrid;
-  const rawGridSize = parsed.state.gridSize;
-
-  if (!Array.isArray(rawElements) || !isObject(rawViewport)) {
-    return { ok: false as const, error: "Contenu du document invalide (elements/viewport)." };
-  }
-
-  const normalizedElements: CanvasElement[] = [];
-  for (const item of rawElements) {
-    if (!isObject(item)) continue;
-    const type = item.type;
-    const x = typeof item.x === "number" ? item.x : 0;
-    const y = typeof item.y === "number" ? item.y : 0;
-    const id = typeof item.id === "string" ? item.id : randomUUID();
-    if (
-      type !== "rectangle" &&
-      type !== "text" &&
-      type !== "note" &&
-      type !== "line" &&
-      type !== "image" &&
-      type !== "envelope"
-    ) {
-      continue;
-    }
-    const element = normalizeElementFromImport({ ...(item as CanvasElement), id, x, y });
-    normalizedElements.push(element);
-  }
-
-  const viewport = {
-    x: typeof rawViewport.x === "number" ? rawViewport.x : 0,
-    y: typeof rawViewport.y === "number" ? rawViewport.y : 0,
-    zoom: typeof rawViewport.zoom === "number" ? rawViewport.zoom : 1,
-  };
-
-  applyDocumentState({
-    elements: normalizedElements,
-    viewport,
-    gridSize: typeof rawGridSize === "number" ? rawGridSize : 24,
-    showGrid: Boolean(rawShowGrid),
-    snapToGrid: Boolean(rawSnapToGrid),
-  });
+  applyDocumentState(result.documentState);
   history.undoStack = [];
   history.redoStack = [];
   opHistory.undoStack = [];
   opHistory.redoStack = [];
   state.revision += 1;
 
-  return { ok: true as const };
+  return result;
+}
+
+function importExternalDocument(fileName: string, jsonText: string): DocumentImportResult {
+  const result = importDocumentContent(fileName, jsonText);
+  if (!result.ok) {
+    return result;
+  }
+  applyDocumentState(result.documentState);
+  history.undoStack = [];
+  history.redoStack = [];
+  opHistory.undoStack = [];
+  opHistory.redoStack = [];
+  markDocumentChanged();
+  return result;
 }
 
 function getDocumentState() {
@@ -3809,6 +3899,11 @@ export function useCanvasStore() {
     addSelected,
     toggleSelected,
     isSelected,
+    getGroupMemberIds,
+    getEffectiveSelectionIds,
+    getSelectionGroupId,
+    canGroupSelection,
+    canUngroupSelection,
     addRectangle,
     addText,
     addNote,
@@ -3834,11 +3929,13 @@ export function useCanvasStore() {
     replaceDocumentState,
     exportDocumentJson,
     importDocumentJson,
+    importExternalDocument,
     updateSelectedFill,
     updateSelectedStroke,
     updateSelectedStrokeStyle,
     updateSelectedTheme,
     updateSelectedShadowType,
+    updateSelectedRectangleCornerRadius,
     updateSelectedNoteTextColor,
     updateNoteReaction,
     updateSelectedLineStyle,
@@ -3887,6 +3984,8 @@ export function useCanvasStore() {
     bringSelectedForward,
     sendSelectedBackward,
     sendSelectedToBack,
+    groupSelected,
+    ungroupSelected,
     lockSelected,
     unlockSelected,
     hasClipboard,
@@ -3908,5 +4007,3 @@ export function useCanvasStore() {
     redo,
   };
 }
-
-

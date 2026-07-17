@@ -1,6 +1,8 @@
 export type ContextMenuTarget = "element" | "canvas";
 
 export type ContextMenuActionId =
+  | "group"
+  | "ungroup"
   | "duplicate"
   | "copy"
   | "paste"
@@ -17,6 +19,8 @@ export type ContextMenuActionDefinition = {
 };
 
 export const CONTEXT_MENU_ACTIONS: ContextMenuActionDefinition[] = [
+  { id: "group", target: "element" },
+  { id: "ungroup", target: "element" },
   { id: "duplicate", target: "element" },
   { id: "copy", target: "element" },
   { id: "paste", target: "element" },

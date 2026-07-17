@@ -17,7 +17,7 @@ const profileThemePreference = ref<ThemePreference>("system");
 const oidcEnabled = ref(false);
 const errorText = ref("");
 const successText = ref("");
-let successMessageTimerId: number | null = null;
+let successMessageTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
 
 const initials = computed(() => {
   const username = auth.state.user?.displayName || "U";
@@ -638,4 +638,3 @@ onUnmounted(() => {
   }
 }
 </style>
-

@@ -132,6 +132,7 @@ export type Operation =
           stroke?: string;
           strokeStyle?: "solid" | "dashed" | "dotted";
           shadowType?: "none" | "soft" | "offset" | "glow";
+          cornerRadius?: 0 | 16 | 32;
         };
       };
     })
@@ -141,6 +142,7 @@ export type Operation =
         id: string;
         patch: {
           locked?: boolean;
+          groupId?: string | null;
           envelopeType?: "convex" | "rectangle" | "rounded";
           titleOffsetX?: number;
           titleOffsetY?: number;
@@ -308,6 +310,7 @@ function isCanvasElementLike(value: unknown) {
     return false;
   }
   if (typeof value.locked !== "undefined" && typeof value.locked !== "boolean") return false;
+  if (typeof value.groupId !== "undefined" && value.groupId !== null && typeof value.groupId !== "string") return false;
 
   if (value.type === "line") {
     if (!isFiniteNumber(value.x2) || !isFiniteNumber(value.y2) || !isFiniteNumber(value.strokeWidth)) return false;
@@ -327,6 +330,14 @@ function isCanvasElementLike(value: unknown) {
   }
 
   if (value.type === "rectangle") {
+    if (
+      typeof value.cornerRadius !== "undefined" &&
+      value.cornerRadius !== 0 &&
+      value.cornerRadius !== 16 &&
+      value.cornerRadius !== 32
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -448,16 +459,23 @@ export function isValidOperation(operation: unknown): operation is Operation {
     case "element.patchStyle":
       if (!hasOnlyKeys(payload, ["id", "patch"])) return false;
       if (typeof payload.id !== "string" || !isObjectRecord(payload.patch)) return false;
-      if (!hasOnlyKeys(payload.patch, ["fill", "stroke", "strokeStyle", "shadowType"])) return false;
+      if (!hasOnlyKeys(payload.patch, ["fill", "stroke", "strokeStyle", "shadowType", "cornerRadius"])) return false;
       if (typeof payload.patch.fill !== "undefined" && typeof payload.patch.fill !== "string") return false;
       if (typeof payload.patch.stroke !== "undefined" && typeof payload.patch.stroke !== "string") return false;
       if (typeof payload.patch.strokeStyle !== "undefined" && (typeof payload.patch.strokeStyle !== "string" || !STROKE_STYLES.has(payload.patch.strokeStyle))) return false;
-      return typeof payload.patch.shadowType === "undefined" || (typeof payload.patch.shadowType === "string" && SHADOW_TYPES.has(payload.patch.shadowType));
+      if (typeof payload.patch.shadowType !== "undefined" && (typeof payload.patch.shadowType !== "string" || !SHADOW_TYPES.has(payload.patch.shadowType))) return false;
+      return (
+        typeof payload.patch.cornerRadius === "undefined" ||
+        payload.patch.cornerRadius === 0 ||
+        payload.patch.cornerRadius === 16 ||
+        payload.patch.cornerRadius === 32
+      );
     case "element.patchData":
       if (!hasOnlyKeys(payload, ["id", "patch"])) return false;
       if (typeof payload.id !== "string" || !isObjectRecord(payload.patch)) return false;
-      if (!hasOnlyKeys(payload.patch, ["locked", "envelopeType", "titleOffsetX", "titleOffsetY", "memberIds", "noteReactions"])) return false;
+      if (!hasOnlyKeys(payload.patch, ["locked", "groupId", "envelopeType", "titleOffsetX", "titleOffsetY", "memberIds", "noteReactions"])) return false;
       if (typeof payload.patch.locked !== "undefined" && typeof payload.patch.locked !== "boolean") return false;
+      if (typeof payload.patch.groupId !== "undefined" && payload.patch.groupId !== null && typeof payload.patch.groupId !== "string") return false;
       if (typeof payload.patch.envelopeType !== "undefined" && (typeof payload.patch.envelopeType !== "string" || !ENVELOPE_TYPES.has(payload.patch.envelopeType))) return false;
       if (typeof payload.patch.titleOffsetX !== "undefined" && !isFiniteNumber(payload.patch.titleOffsetX)) return false;
       if (typeof payload.patch.titleOffsetY !== "undefined" && !isFiniteNumber(payload.patch.titleOffsetY)) return false;
