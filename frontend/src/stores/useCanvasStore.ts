@@ -29,6 +29,7 @@ import { LocalLoopbackAdapter, type CollabAdapter } from "../collab/collabAdapte
 import { OP_SCHEMA_VERSION, OP_VERSION, isValidOperation, type Operation } from "../collab/operations";
 import { randomUUID } from "../utils/uuid";
 import { importDocumentContent, type DocumentImportResult } from "../import/documentImport";
+import { measureWrappedTextLayout } from "../domain/textLayout";
 
 type Snapshot = {
   elements: CanvasElement[];
@@ -234,6 +235,30 @@ const OPPOSITE_ANCHOR: Record<AnchorPosition, AnchorPosition> = {
 
 function cloneElement(element: CanvasElement): CanvasElement {
   return clonePlain(element);
+}
+
+function getTextHeightForElement(
+  text: string,
+  width: number,
+  fontSize: number,
+  fontFamily: string,
+  bold: boolean,
+  italic: boolean,
+  lineHeight: number,
+  letterSpacing: number,
+  textTransform: TextTransformMode,
+) {
+  return measureWrappedTextLayout({
+    text,
+    width,
+    fontSize,
+    fontFamily,
+    bold,
+    italic,
+    lineHeight,
+    letterSpacing,
+    textTransform,
+  }).height;
 }
 
 function normalizeGroupMembership(elements: CanvasElement[]) {
@@ -1368,6 +1393,24 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
     if (element.type === "text" && typeof nextFontSize === "number") {
       element.fontSize = nextFontSize;
     }
+    if (element.type === "text") {
+      const fontSize = element.fontSize ?? DEFAULT_TEXT_SIZE;
+      element.width = Math.max(24, element.width);
+      element.height = Math.max(
+        24,
+        getTextHeightForElement(
+          element.text ?? "",
+          element.width,
+          fontSize,
+          element.fontFamily ?? "system-ui",
+          element.bold ?? false,
+          element.italic ?? false,
+          element.lineHeight ?? 1.2,
+          element.letterSpacing ?? 0,
+          element.textTransform ?? "none",
+        ),
+      );
+    }
     if (element.type === "line") {
       element.x2 = element.x + width;
       element.y2 = element.y + height;
@@ -1525,9 +1568,21 @@ function applyOperation(operation: Operation, options?: { recordHistory?: boolea
     element.text = text;
     if (element.type === "text") {
       const fontSize = element.fontSize ?? DEFAULT_TEXT_SIZE;
-      const minWidth = Math.max(120, text.length * fontSize * 0.55);
-      element.width = Math.max(element.width, minWidth);
-      element.height = Math.max(32, fontSize * 1.5);
+      element.width = Math.max(120, element.width);
+      element.height = Math.max(
+        24,
+        getTextHeightForElement(
+          text,
+          element.width,
+          fontSize,
+          element.fontFamily ?? "system-ui",
+          element.bold ?? false,
+          element.italic ?? false,
+          element.lineHeight ?? 1.2,
+          element.letterSpacing ?? 0,
+          element.textTransform ?? "none",
+        ),
+      );
     }
     if (!recordHistory) {
       markDocumentChanged();

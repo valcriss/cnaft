@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import type { CSSProperties } from "vue";
 import type {
   AnchorPosition,
   CanvasElement,
@@ -22,6 +23,14 @@ import { getElementBounds, type Rect } from "../../domain/elements";
 import { getLinePolyline, getLineSegments } from "../../domain/lineGeometry";
 import { getElementCapabilities } from "../../domain/elementCapabilities";
 import { renderCanvasElement } from "../../domain/elementRenderers";
+import {
+  applyTextTransform,
+  buildTextFont,
+  getAlignedTextStartY,
+  measureTextWidth,
+  measureWrappedTextLayout,
+  wrapTextToLines,
+} from "../../domain/textLayout";
 import { ADDABLE_ELEMENTS } from "../../config/elementCatalog";
 import {
   CONTEXT_MENU_ACTIONS,
@@ -31,8 +40,10 @@ import {
   getSelectionContextElementType,
   shouldPreserveMultiSelectionForContextMenu,
 } from "./contextMenuSelection";
+import { getTransparentRectangleHitMode, isPointInsideRect } from "./hitTesting";
 
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
+type TextEditHandle = "left" | "right";
 type CanvasRenderMode = "display" | "export";
 type CanvasRenderTheme = {
   isDark: boolean;
@@ -74,6 +85,7 @@ const canvasStore = useCanvasStore();
 const themeStore = useThemeStore();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const editorRef = ref<HTMLTextAreaElement | null>(null);
+const inlineTextInputRef = ref<HTMLTextAreaElement | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
 const textMeasureCanvas = document.createElement("canvas");
 const textMeasureCtx = textMeasureCanvas.getContext("2d");
@@ -271,6 +283,35 @@ const textEditor = ref<{
   textTransform: TextTransformMode;
   text: string;
 } | null>(null);
+const canvasTextEditor = ref<{
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  textColor: string;
+  fontFamily: string;
+  textAlign: TextAlign;
+  textVerticalAlign: TextVerticalAlign;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  lineHeight: number;
+  letterSpacing: number;
+  textTransform: TextTransformMode;
+  text: string;
+  selectionStart: number;
+  selectionEnd: number;
+} | null>(null);
+let textEditingResize:
+  | {
+    side: "left" | "right";
+    startPointerX: number;
+    startX: number;
+    startWidth: number;
+  }
+  | null = null;
 
 const isCanvasDark = computed(() => themeStore.state.resolvedTheme === "dark");
 
@@ -308,6 +349,15 @@ const textEditorStyle = computed(() => {
     borderColor: renderTheme.editorBorder,
   };
 });
+const inlineTextInputStyle = computed<CSSProperties>(() => ({
+  position: "absolute",
+  opacity: "0",
+  pointerEvents: "none",
+  width: "1px",
+  height: "1px",
+  left: "-9999px",
+  top: "-9999px",
+}));
 
 const selectedElements = computed(() => canvasStore.selectedElements.value);
 const followedUser = computed(() => {
@@ -687,77 +737,6 @@ function getTextBoundsFromValues(text: string, fontSize: number, fallbackWidth: 
   return { width, height };
 }
 
-function wrapTextToLines(text: string, maxWidth: number, font: string, letterSpacing = 0) {
-  if (!textMeasureCtx) {
-    return text.split("\n");
-  }
-
-  textMeasureCtx.font = font;
-  const lines: string[] = [];
-  const paragraphs = text.split("\n");
-
-  for (const paragraph of paragraphs) {
-    if (!paragraph) {
-      lines.push("");
-      continue;
-    }
-
-    const words = paragraph.split(" ");
-    let line = "";
-
-    for (const word of words) {
-      const testLine = line ? `${line} ${word}` : word;
-      if (measureTextWidth(testLine, font, letterSpacing) <= maxWidth) {
-        line = testLine;
-        continue;
-      }
-
-      if (line) {
-        lines.push(line);
-        line = "";
-      }
-
-      if (measureTextWidth(word, font, letterSpacing) <= maxWidth) {
-        line = word;
-        continue;
-      }
-
-      let chunk = "";
-      for (const char of word) {
-        const testChunk = chunk + char;
-        if (measureTextWidth(testChunk, font, letterSpacing) > maxWidth && chunk) {
-          lines.push(chunk);
-          chunk = char;
-        } else {
-          chunk = testChunk;
-        }
-      }
-      line = chunk;
-    }
-
-    lines.push(line);
-  }
-
-  return lines;
-}
-
-function applyTextTransform(text: string, mode: TextTransformMode) {
-  if (mode === "uppercase") return text.toUpperCase();
-  if (mode === "capitalize") {
-    return text.replace(/\b\p{L}/gu, (char) => char.toUpperCase());
-  }
-  return text;
-}
-
-function measureTextWidth(text: string, font: string, letterSpacing = 0) {
-  if (!textMeasureCtx) {
-    return text.length * 8 + Math.max(0, text.length - 1) * letterSpacing;
-  }
-  textMeasureCtx.font = font;
-  const width = textMeasureCtx.measureText(text).width;
-  return width + Math.max(0, text.length - 1) * letterSpacing;
-}
-
 function drawTextWithLetterSpacing(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -802,11 +781,9 @@ function getRequiredNoteSide(
     const contentWidth = Math.max(10, side - padding * 2);
     const transformedText = applyTextTransform(text, textTransform);
     const lines = wrapTextToLines(transformedText, contentWidth, font, letterSpacing);
-
-    textMeasureCtx.font = font;
     let maxLineWidth = 0;
     for (const line of lines) {
-      maxLineWidth = Math.max(maxLineWidth, measureTextWidth(line, font, letterSpacing));
+      maxLineWidth = Math.max(maxLineWidth, line.width);
     }
 
     const lineHeight = fontSize * lineHeightFactor;
@@ -1543,6 +1520,23 @@ function getResizeHandleAt(worldX: number, worldY: number, bounds: Rect): Resize
   return null;
 }
 
+function getTextEditHandleCenter(bounds: Rect, handle: TextEditHandle) {
+  return handle === "left"
+    ? { x: bounds.x, y: bounds.y + bounds.height / 2 }
+    : { x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2 };
+}
+
+function getTextEditHandleAt(worldX: number, worldY: number, bounds: Rect): TextEditHandle | null {
+  const radius = handleSizeWorld() / 2;
+  for (const handle of ["left", "right"] as TextEditHandle[]) {
+    const center = getTextEditHandleCenter(bounds, handle);
+    if (Math.abs(worldX - center.x) <= radius && Math.abs(worldY - center.y) <= radius) {
+      return handle;
+    }
+  }
+  return null;
+}
+
 function distancePointToSegment(
   px: number,
   py: number,
@@ -1584,6 +1578,8 @@ function getLineEndpointAt(worldX: number, worldY: number) {
 }
 
 function hitTest(worldX: number, worldY: number): CanvasElement | null {
+  let transparentRectangleFallback: Extract<CanvasElement, { type: "rectangle" }> | null = null;
+
   for (let i = canvasStore.state.elements.length - 1; i >= 0; i -= 1) {
     const element = canvasStore.state.elements[i];
     if (!element || element.type === "envelope") continue;
@@ -1613,12 +1609,26 @@ function hitTest(worldX: number, worldY: number): CanvasElement | null {
     }
 
     const rect = getElementRect(element);
-    if (
-      worldX >= rect.x &&
-      worldX <= rect.x + rect.width &&
-      worldY >= rect.y &&
-      worldY <= rect.y + rect.height
-    ) {
+    if (!isPointInsideRect(worldX, worldY, rect)) {
+      continue;
+    }
+
+    if (element.type === "rectangle" && element.fill === "transparent") {
+      const hitMode = getTransparentRectangleHitMode(
+        worldX,
+        worldY,
+        rect,
+        element.stroke,
+        canvasStore.state.viewport.zoom,
+      );
+      if (hitMode === "border") {
+        return element;
+      }
+      transparentRectangleFallback = element;
+      continue;
+    }
+
+    if (isPointInsideRect(worldX, worldY, rect)) {
       return element;
     }
   }
@@ -1631,7 +1641,7 @@ function hitTest(worldX: number, worldY: number): CanvasElement | null {
     }
   }
 
-  return null;
+  return transparentRectangleFallback;
 }
 
 function drawGrid(
@@ -1693,12 +1703,12 @@ function drawWrappedText(
 
   for (const line of drawableLines) {
     if (lineY + lineHeight > y + maxHeight) return;
-    const lineWidth = measureTextWidth(line, ctx.font, letterSpacing);
+    const lineWidth = line.width;
     const lineX = textAlign === "left" ? x : textAlign === "center" ? x + maxWidth / 2 : x + maxWidth;
     ctx.textAlign = "left";
     const drawX = textAlign === "left" ? lineX : textAlign === "center" ? lineX - lineWidth / 2 : lineX - lineWidth;
-    drawTextWithLetterSpacing(ctx, line, drawX, lineY, letterSpacing);
-    if (underline && line) {
+    drawTextWithLetterSpacing(ctx, line.text, drawX, lineY, letterSpacing);
+    if (underline && line.text) {
       const startX = drawX;
       const underlineY = lineY + lineHeight * 0.9;
       ctx.beginPath();
@@ -1754,6 +1764,102 @@ function drawResizeHandles(ctx: CanvasRenderingContext2D, bounds: Rect) {
     ctx.stroke();
   }
 
+  ctx.restore();
+}
+
+function getCanvasTextCaretPosition(editor: NonNullable<typeof canvasTextEditor.value>, index: number) {
+  const layout = getCanvasTextEditorLayout();
+  if (!layout) return { x: editor.x, y: editor.y, height: editor.fontSize * editor.lineHeight };
+  const font = buildTextFont(editor.fontSize, editor.fontFamily, editor.bold, editor.italic);
+  const startY = getAlignedTextStartY(editor.y, editor.height, layout.height, editor.textVerticalAlign);
+
+  for (let lineIndex = 0; lineIndex < layout.lines.length; lineIndex += 1) {
+    const line = layout.lines[lineIndex];
+    if (!line) continue;
+    const clampedIndex = Math.max(line.start, Math.min(index, line.end));
+    const lineText = line.text.slice(0, Math.max(0, clampedIndex - line.start));
+    const lineX = editor.x + (editor.textAlign === "center" ? editor.width / 2 - line.width / 2 : editor.textAlign === "right" ? editor.width - line.width : 0);
+    if (index <= line.end || lineIndex === layout.lines.length - 1) {
+      return {
+        x: lineX + measureTextWidth(lineText, font, editor.letterSpacing),
+        y: startY + lineIndex * layout.lineHeightPx,
+        height: layout.lineHeightPx,
+      };
+    }
+  }
+
+  return { x: editor.x, y: startY, height: layout.lineHeightPx };
+}
+
+function getCanvasTextCaretIndexFromPoint(editor: NonNullable<typeof canvasTextEditor.value>, worldX: number, worldY: number) {
+  const layout = getCanvasTextEditorLayout();
+  if (!layout) return 0;
+  const font = buildTextFont(editor.fontSize, editor.fontFamily, editor.bold, editor.italic);
+  const startY = getAlignedTextStartY(editor.y, editor.height, layout.height, editor.textVerticalAlign);
+  const lineIndex = Math.max(0, Math.min(layout.lines.length - 1, Math.floor((worldY - startY) / Math.max(1, layout.lineHeightPx))));
+  const line = layout.lines[lineIndex];
+  if (!line) return 0;
+  const lineX = editor.x + (editor.textAlign === "center" ? editor.width / 2 - line.width / 2 : editor.textAlign === "right" ? editor.width - line.width : 0);
+
+  for (let i = 0; i <= line.text.length; i += 1) {
+    const currentWidth = measureTextWidth(line.text.slice(0, i), font, editor.letterSpacing);
+    if (worldX <= lineX + currentWidth) {
+      return line.start + i;
+    }
+  }
+  return line.end;
+}
+
+function drawCanvasTextEditorOverlay(ctx: CanvasRenderingContext2D) {
+  const editor = canvasTextEditor.value;
+  if (!editor) return;
+  const layout = getCanvasTextEditorLayout();
+  if (!layout) return;
+  const font = buildTextFont(editor.fontSize, editor.fontFamily, editor.bold, editor.italic);
+  const startY = getAlignedTextStartY(editor.y, editor.height, layout.height, editor.textVerticalAlign);
+
+  ctx.save();
+  ctx.strokeStyle = "#3b82f6";
+  ctx.lineWidth = 1.5 / canvasStore.state.viewport.zoom;
+  ctx.setLineDash([]);
+  ctx.strokeRect(editor.x, editor.y, editor.width, Math.max(editor.height, layout.height));
+  ctx.fillStyle = editor.textColor;
+  ctx.font = font;
+  ctx.textBaseline = "top";
+  drawWrappedText(
+    ctx,
+    editor.text,
+    editor.x,
+    startY,
+    editor.width,
+    Math.max(editor.height, layout.height),
+    layout.lineHeightPx,
+    editor.textAlign,
+    "top",
+    editor.underline,
+    editor.letterSpacing,
+    editor.textTransform,
+  );
+
+  const caretIndex = Math.min(editor.selectionStart, editor.selectionEnd);
+  const caret = getCanvasTextCaretPosition(editor, caretIndex);
+  ctx.beginPath();
+  ctx.moveTo(caret.x, caret.y);
+  ctx.lineTo(caret.x, caret.y + caret.height);
+  ctx.lineWidth = 1.5 / canvasStore.state.viewport.zoom;
+  ctx.strokeStyle = "#0f172a";
+  ctx.stroke();
+
+  const radius = handleSizeWorld() / 2;
+  for (const handle of ["left", "right"] as TextEditHandle[]) {
+    const center = getTextEditHandleCenter({ x: editor.x, y: editor.y, width: editor.width, height: Math.max(editor.height, layout.height) }, handle);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = "#3b82f6";
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -2125,6 +2231,7 @@ function renderScene(
 
   for (const element of canvasStore.state.elements) {
     if (element.type === "envelope") continue;
+    if (canvasTextEditor.value?.id === element.id && element.type === "text") continue;
     const renderedElement = getRenderedElementForTheme(element, renderTheme);
     renderCanvasElement(ctx, renderedElement, {
       getNoteFontSize,
@@ -2138,6 +2245,8 @@ function renderScene(
   drawNoteReactions(ctx);
 
   if (!includeUiOverlays) return;
+
+  drawCanvasTextEditorOverlay(ctx);
 
   const hasEditableLineSelection = selectedElements.value.some(
     (element) => element.type === "line" && !element.locked,
@@ -2164,7 +2273,7 @@ function renderScene(
   const bounds = getSelectionBounds(selectedElements.value);
   const hasLineSelection = selectedElements.value.some((element) => element.type === "line");
   const hasEnvelopeSelection = selectedElements.value.some((element) => element.type === "envelope");
-  if (bounds && !hasLineSelection) {
+  if (bounds && !hasLineSelection && !canvasTextEditor.value) {
     if (!hasEnvelopeSelection && selectedElements.value.every((element) => element.type !== "line")) {
       drawResizeHandles(ctx, bounds);
     }
@@ -2224,6 +2333,40 @@ function beginPan(clientX: number, clientY: number) {
 function openTextEditor(element: CanvasElement) {
   if (element.locked) return;
   if (element.type !== "text" && element.type !== "note" && element.type !== "envelope") return;
+  if (element.type === "text") {
+    canvasTextEditor.value = {
+      id: element.id,
+      x: element.x,
+      y: element.y,
+      width: element.width,
+      height: element.height,
+      fontSize: element.fontSize ?? 20,
+      textColor: element.fill,
+      fontFamily: element.fontFamily ?? "system-ui",
+      textAlign: element.textAlign ?? "left",
+      textVerticalAlign: element.textVerticalAlign ?? "top",
+      bold: element.bold ?? false,
+      italic: element.italic ?? false,
+      underline: element.underline ?? false,
+      lineHeight: element.lineHeight ?? 1.2,
+      letterSpacing: element.letterSpacing ?? 0,
+      textTransform: element.textTransform ?? "none",
+      text: element.text ?? "",
+      selectionStart: (element.text ?? "").length,
+      selectionEnd: (element.text ?? "").length,
+    };
+    canvasStore.updatePresenceEditing(element.id);
+    canvasStore.beginInteraction();
+    nextTick(() => {
+      inlineTextInputRef.value?.focus();
+      if (inlineTextInputRef.value) {
+        inlineTextInputRef.value.selectionStart = canvasTextEditor.value?.selectionStart ?? 0;
+        inlineTextInputRef.value.selectionEnd = canvasTextEditor.value?.selectionEnd ?? 0;
+      }
+    });
+    return;
+  }
+
   const bounds = element.type === "envelope" ? getEnvelopeTitleRect(element) : getElementRect(element);
 
   textEditor.value = {
@@ -2234,10 +2377,7 @@ function openTextEditor(element: CanvasElement) {
     width: bounds.width,
     height: bounds.height,
     fontSize: element.fontSize ?? (element.type === "note" ? getNoteFontSize(element.width) : 20),
-    textColor:
-      element.type === "note" || element.type === "envelope"
-        ? (element.textColor ?? "#1f2937")
-        : element.fill,
+    textColor: element.textColor ?? "#1f2937",
     fontFamily: element.fontFamily ?? "system-ui",
     textAlign: element.textAlign ?? "left",
     textVerticalAlign: element.textVerticalAlign ?? "top",
@@ -2276,6 +2416,89 @@ function closeTextEditor(save: boolean) {
 
   canvasStore.updatePresenceEditing(null);
   textEditor.value = null;
+}
+
+function getCanvasTextEditorLayout() {
+  const editor = canvasTextEditor.value;
+  if (!editor) return null;
+  return measureWrappedTextLayout({
+    text: editor.text,
+    width: Math.max(24, editor.width),
+    fontSize: editor.fontSize,
+    fontFamily: editor.fontFamily,
+    bold: editor.bold,
+    italic: editor.italic,
+    lineHeight: editor.lineHeight,
+    letterSpacing: editor.letterSpacing,
+    textTransform: editor.textTransform,
+  });
+}
+
+function syncInlineTextSelection() {
+  if (!canvasTextEditor.value || !inlineTextInputRef.value) return;
+  canvasTextEditor.value.selectionStart = inlineTextInputRef.value.selectionStart ?? 0;
+  canvasTextEditor.value.selectionEnd = inlineTextInputRef.value.selectionEnd ?? 0;
+  render();
+}
+
+function closeCanvasTextEditor(save: boolean) {
+  const editor = canvasTextEditor.value;
+  if (!editor) return;
+
+  if (save) {
+    const nextText = editor.text.trim() || "Note";
+    canvasStore.updateText(editor.id, nextText, false);
+    const layout = getCanvasTextEditorLayout();
+    canvasStore.updateElementSize(
+      editor.id,
+      Math.max(24, editor.width),
+      Math.max(24, layout?.height ?? editor.height),
+      editor.x,
+      editor.y,
+      undefined,
+      false,
+    );
+    canvasStore.commitInteraction();
+  } else {
+    canvasStore.cancelInteraction();
+  }
+
+  canvasStore.updatePresenceEditing(null);
+  canvasTextEditor.value = null;
+  textEditingResize = null;
+  render();
+}
+
+function onInlineTextInput() {
+  const editor = canvasTextEditor.value;
+  if (!editor || !inlineTextInputRef.value) return;
+  editor.text = inlineTextInputRef.value.value;
+  const layout = getCanvasTextEditorLayout();
+  editor.height = Math.max(24, layout?.height ?? editor.height);
+  canvasStore.updateElementSize(editor.id, editor.width, editor.height, editor.x, editor.y, undefined, false);
+  syncInlineTextSelection();
+}
+
+function isPointInsideCanvasTextEditor(worldX: number, worldY: number) {
+  const editor = canvasTextEditor.value;
+  if (!editor) return false;
+  return isPointInsideRect(worldX, worldY, {
+    x: editor.x,
+    y: editor.y,
+    width: editor.width,
+    height: Math.max(editor.height, getCanvasTextEditorLayout()?.height ?? editor.height),
+  });
+}
+
+function startCanvasTextEditingResize(side: TextEditHandle, worldX: number) {
+  const editor = canvasTextEditor.value;
+  if (!editor) return;
+  textEditingResize = {
+    side,
+    startPointerX: worldX,
+    startX: editor.x,
+    startWidth: editor.width,
+  };
 }
 
 function onEditorInput() {
@@ -2963,6 +3186,37 @@ async function onPointerDown(event: PointerEvent) {
   const sx = event.clientX - rect.left;
   const sy = event.clientY - rect.top;
   const world = screenToWorld(sx, sy);
+
+  if (canvasTextEditor.value) {
+    const editorBounds = {
+      x: canvasTextEditor.value.x,
+      y: canvasTextEditor.value.y,
+      width: canvasTextEditor.value.width,
+      height: Math.max(canvasTextEditor.value.height, getCanvasTextEditorLayout()?.height ?? canvasTextEditor.value.height),
+    };
+    const editHandle = getTextEditHandleAt(world.x, world.y, editorBounds);
+    if (event.button === 0 && editHandle) {
+      startCanvasTextEditingResize(editHandle, world.x);
+      updateCanvasCursor("ew-resize");
+      return;
+    }
+    if (event.button === 0 && isPointInsideCanvasTextEditor(world.x, world.y)) {
+      const nextIndex = getCanvasTextCaretIndexFromPoint(canvasTextEditor.value, world.x, world.y);
+      canvasTextEditor.value.selectionStart = nextIndex;
+      canvasTextEditor.value.selectionEnd = nextIndex;
+      nextTick(() => {
+        inlineTextInputRef.value?.focus();
+        if (inlineTextInputRef.value) {
+          inlineTextInputRef.value.selectionStart = nextIndex;
+          inlineTextInputRef.value.selectionEnd = nextIndex;
+        }
+      });
+      render();
+      return;
+    }
+    closeCanvasTextEditor(true);
+  }
+
   if (!draggingSelection && alignmentGuides.value.length > 0) {
     alignmentGuides.value = [];
   }
@@ -3240,9 +3494,19 @@ function resizeSelectionFromHandle(worldX: number, worldY: number) {
     if (elementType === "text") {
       const fontScale = (scaleX + scaleY) / 2;
       elementNextFontSize = Math.max(10, Math.min(96, startFont * fontScale));
-      const textBounds = getTextBoundsFromValues(startText || "Note", elementNextFontSize, elementNextWidth, elementNextHeight);
-      elementNextWidth = textBounds.width;
-      elementNextHeight = textBounds.height;
+      const layout = measureWrappedTextLayout({
+        text: startText || "Note",
+        width: Math.max(24, elementNextWidth),
+        fontSize: elementNextFontSize,
+        fontFamily: "system-ui",
+        bold: true,
+        italic: false,
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        textTransform: "none",
+      });
+      elementNextWidth = Math.max(24, elementNextWidth);
+      elementNextHeight = Math.max(24, layout.height);
     }
 
     if (elementType === "note") {
@@ -3329,6 +3593,24 @@ function onPointerMove(event: PointerEvent) {
     const dy = event.clientY - pointerStartY;
     canvasStore.setViewportPosition(panStartX + dx, panStartY + dy);
     updateCanvasCursor("grabbing");
+    return;
+  }
+
+  if (textEditingResize && canvasTextEditor.value) {
+    const editor = canvasTextEditor.value;
+    const dx = world.x - textEditingResize.startPointerX;
+    if (textEditingResize.side === "left") {
+      const nextX = Math.min(textEditingResize.startX + dx, textEditingResize.startX + textEditingResize.startWidth - 24);
+      editor.width = Math.max(24, textEditingResize.startWidth + (textEditingResize.startX - nextX));
+      editor.x = nextX;
+    } else {
+      editor.width = Math.max(24, textEditingResize.startWidth + dx);
+    }
+    const layout = getCanvasTextEditorLayout();
+    editor.height = Math.max(24, layout?.height ?? editor.height);
+    canvasStore.updateElementSize(editor.id, editor.width, editor.height, editor.x, editor.y, undefined, false);
+    updateCanvasCursor("ew-resize");
+    render();
     return;
   }
 
@@ -3476,6 +3758,23 @@ function onPointerMove(event: PointerEvent) {
   const bounds = getSelectionBounds(selectedElements.value);
   const hasLineSelection = selectedElements.value.some((element) => element.type === "line");
   const hasEnvelopeSelection = selectedElements.value.some((element) => element.type === "envelope");
+  if (canvasTextEditor.value) {
+    const editorBounds = {
+      x: canvasTextEditor.value.x,
+      y: canvasTextEditor.value.y,
+      width: canvasTextEditor.value.width,
+      height: Math.max(canvasTextEditor.value.height, getCanvasTextEditorLayout()?.height ?? canvasTextEditor.value.height),
+    };
+    const handle = getTextEditHandleAt(world.x, world.y, editorBounds);
+    if (handle) {
+      updateCanvasCursor("ew-resize");
+      return;
+    }
+    if (isPointInsideCanvasTextEditor(world.x, world.y)) {
+      updateCanvasCursor("text");
+      return;
+    }
+  }
   if (canvasStore.state.tool === "select") {
     const lineEndpoint = getLineEndpointAt(world.x, world.y);
     if (lineEndpoint) {
@@ -3553,6 +3852,16 @@ function onPointerUp(event: PointerEvent) {
   if (resizingSelection) {
     canvasStore.commitInteraction();
     resizingSelection = null;
+  }
+
+  if (textEditingResize) {
+    const editor = canvasTextEditor.value;
+    if (editor) {
+      const layout = getCanvasTextEditorLayout();
+      editor.height = Math.max(24, layout?.height ?? editor.height);
+      canvasStore.updateElementSize(editor.id, editor.width, editor.height, editor.x, editor.y, undefined, false);
+    }
+    textEditingResize = null;
   }
 
   if (draggingSelection) {
@@ -3640,6 +3949,9 @@ function onPointerUp(event: PointerEvent) {
 function onContextMenu(event: MouseEvent) {
   event.preventDefault();
   closeNoteReactionMenu();
+  if (canvasTextEditor.value) {
+    closeCanvasTextEditor(true);
+  }
 
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -3706,6 +4018,9 @@ function onContextMenu(event: MouseEvent) {
 }
 
 function onDoubleClick(event: MouseEvent) {
+  if (canvasTextEditor.value) {
+    return;
+  }
   const canvas = canvasRef.value;
   if (!canvas) return;
 
@@ -3896,6 +4211,22 @@ function onEditorKeyDown(event: KeyboardEvent) {
     event.preventDefault();
     closeTextEditor(true);
   }
+}
+
+function onInlineTextKeyDown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCanvasTextEditor(false);
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    closeCanvasTextEditor(true);
+    return;
+  }
+  requestAnimationFrame(() => {
+    syncInlineTextSelection();
+  });
 }
 
 function incrementVoteForElement(elementId: string) {
@@ -4186,6 +4517,9 @@ watch(
     <textarea v-if="textEditor" ref="editorRef" v-model="textEditor.text" class="text-editor"
       :class="{ 'note-editor': textEditor.type === 'note' }" :style="textEditorStyle" @input="onEditorInput"
       @blur="closeTextEditor(true)" @keydown="onEditorKeyDown" />
+    <textarea v-if="canvasTextEditor" ref="inlineTextInputRef" v-model="canvasTextEditor.text"
+      :style="inlineTextInputStyle" @input="onInlineTextInput" @select="syncInlineTextSelection"
+      @click="syncInlineTextSelection" @keyup="syncInlineTextSelection" @keydown="onInlineTextKeyDown" />
     <div v-if="contextMenu.visible" ref="menuRef" class="context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
       <template v-if="contextMenu.target === 'element'">

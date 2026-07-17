@@ -13,6 +13,7 @@ import type {
   TextElement,
 } from "./elements";
 import { getLineDirectionsFromPoints, type Point } from "./lineGeometry";
+import { buildTextFont, getAlignedTextStartY, measureWrappedTextLayout } from "./textLayout";
 
 type DrawRoundedRect = (
   ctx: CanvasRenderingContext2D,
@@ -186,51 +187,43 @@ function drawTextWithLetterSpacing(
   }
 }
 
-const renderText: ElementRenderer<TextElement> = (ctx, element) => {
+const renderText: ElementRenderer<TextElement> = (ctx, element, helpers) => {
   ctx.save();
   applyShadowPreset(ctx, element.shadowType);
-  const fontWeight = element.bold ? 700 : 600;
-  const fontStyle = element.italic ? "italic" : "normal";
   const fontFamily = element.fontFamily ?? "system-ui";
   const textAlign = element.textAlign ?? "left";
   const letterSpacing = element.letterSpacing ?? 0;
-  const transformed = applyTextTransform(element.text ?? "Note", element.textTransform ?? "none");
-  const lines = transformed.split("\n");
-  const lineHeight = (element.fontSize ?? 20) * (element.lineHeight ?? 1.2);
-  const totalHeight = lines.length * lineHeight;
-  const verticalAlign = element.textVerticalAlign ?? "top";
-  const startY =
-    verticalAlign === "middle"
-      ? element.y + Math.max(0, (element.height - totalHeight) / 2)
-      : verticalAlign === "bottom"
-        ? element.y + Math.max(0, element.height - totalHeight)
-        : element.y;
+  const fontSize = element.fontSize ?? 20;
+  const lineHeight = fontSize * (element.lineHeight ?? 1.2);
+  const layout = measureWrappedTextLayout({
+    text: element.text ?? "Note",
+    width: Math.max(8, element.width),
+    fontSize,
+    fontFamily,
+    bold: element.bold ?? false,
+    italic: element.italic ?? false,
+    lineHeight: element.lineHeight ?? 1.2,
+    letterSpacing,
+    textTransform: element.textTransform ?? "none",
+  });
   ctx.fillStyle = element.fill;
-  ctx.font = `${fontStyle} ${fontWeight} ${element.fontSize ?? 20}px ${fontFamily}`;
+  ctx.font = buildTextFont(fontSize, fontFamily, element.bold ?? false, element.italic ?? false);
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const y = startY + index * lineHeight;
-    const rawWidth = ctx.measureText(line).width;
-    const lineWidth = rawWidth + Math.max(0, line.length - 1) * letterSpacing;
-    const startX =
-      textAlign === "left"
-        ? element.x
-        : textAlign === "center"
-          ? element.x + element.width / 2 - lineWidth / 2
-          : element.x + element.width - lineWidth;
-    drawTextWithLetterSpacing(ctx, line, startX, y, letterSpacing);
-    if (!element.underline || !line) continue;
-    const underlineY = y + (element.fontSize ?? 20) * 1.05;
-    ctx.beginPath();
-    ctx.moveTo(startX, underlineY);
-    ctx.lineTo(startX + lineWidth, underlineY);
-    ctx.lineWidth = Math.max(1, Math.round((element.fontSize ?? 20) * 0.06));
-    ctx.strokeStyle = element.fill;
-    ctx.stroke();
-  }
+  helpers.drawWrappedText(
+    ctx,
+    element.text ?? "Note",
+    element.x,
+    getAlignedTextStartY(element.y, element.height, layout.height, element.textVerticalAlign ?? "top"),
+    Math.max(8, element.width),
+    Math.max(layout.height, element.height),
+    lineHeight,
+    textAlign,
+    "top",
+    element.underline ?? false,
+    letterSpacing,
+    element.textTransform ?? "none",
+  );
   ctx.restore();
 };
 
