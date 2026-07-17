@@ -160,33 +160,6 @@ const renderNote: ElementRenderer<NoteElement> = (ctx, element, helpers) => {
   );
 };
 
-function applyTextTransform(text: string, mode: TextTransformMode) {
-  if (mode === "uppercase") return text.toUpperCase();
-  if (mode === "capitalize") {
-    return text.replace(/\b\p{L}/gu, (char) => char.toUpperCase());
-  }
-  return text;
-}
-
-function drawTextWithLetterSpacing(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  letterSpacing: number,
-) {
-  if (!text || letterSpacing <= 0) {
-    ctx.fillText(text, x, y);
-    return;
-  }
-  let cursorX = x;
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i] ?? "";
-    ctx.fillText(char, cursorX, y);
-    cursorX += ctx.measureText(char).width + letterSpacing;
-  }
-}
-
 const renderText: ElementRenderer<TextElement> = (ctx, element, helpers) => {
   ctx.save();
   applyShadowPreset(ctx, element.shadowType);
