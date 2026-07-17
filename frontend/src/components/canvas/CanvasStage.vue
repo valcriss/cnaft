@@ -656,10 +656,6 @@ function normalizeRect(aX: number, aY: number, bX: number, bY: number): Rect {
   };
 }
 
-function rectsIntersect(a: Rect, b: Rect) {
-  return !(a.x + a.width < b.x || b.x + b.width < a.x || a.y + a.height < b.y || b.y + b.height < a.y);
-}
-
 function rectContainsRect(container: Rect, candidate: Rect) {
   return (
     candidate.x >= container.x &&

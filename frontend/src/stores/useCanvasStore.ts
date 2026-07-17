@@ -24,7 +24,6 @@ import {
   DOCUMENT_VERSION,
   type CanvasDocumentState,
   type VersionedCanvasDocument,
-  isObject,
 } from "../domain/documentSchema";
 import { LocalLoopbackAdapter, type CollabAdapter } from "../collab/collabAdapter";
 import { OP_SCHEMA_VERSION, OP_VERSION, isValidOperation, type Operation } from "../collab/operations";
