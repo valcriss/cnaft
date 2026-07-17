@@ -7,11 +7,11 @@ import { canRead, canWrite, getDocumentRole } from "../services/documentAccess.j
 
 const router = Router();
 
-type JsonPrimitive = string | number | boolean;
+type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return false;
+  if (value === null) return true;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
   if (Array.isArray(value)) return value.every(isJsonValue);
   if (typeof value === "object") {
@@ -158,10 +158,10 @@ router.post("/", async (req, res) => {
   const createData = {
     owner: { connect: { id: req.auth!.userId } },
     title: payload.title,
-    contentJson: payload.contentJson,
+    contentJson: payload.contentJson as Prisma.InputJsonValue,
     ...(typeof payload.thumbnailJson !== "undefined"
       ? {
-          thumbnailJson: payload.thumbnailJson,
+          thumbnailJson: payload.thumbnailJson as Prisma.InputJsonValue,
         }
       : {}),
   };
@@ -214,9 +214,11 @@ router.patch("/:id", async (req, res) => {
   }
   const updateData = {
     ...(typeof payload.title !== "undefined" ? { title: payload.title } : {}),
-    ...(typeof payload.contentJson !== "undefined" ? { contentJson: payload.contentJson } : {}),
+    ...(typeof payload.contentJson !== "undefined"
+      ? { contentJson: payload.contentJson as Prisma.InputJsonValue }
+      : {}),
     ...(typeof payload.thumbnailJson !== "undefined"
-      ? { thumbnailJson: payload.thumbnailJson }
+      ? { thumbnailJson: payload.thumbnailJson as Prisma.InputJsonValue }
       : {}),
   };
   const updated = await prisma.document.update({

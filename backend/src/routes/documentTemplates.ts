@@ -5,11 +5,11 @@ import { prisma } from "../lib/prisma.js";
 
 const router = Router();
 
-type JsonPrimitive = string | number | boolean;
+type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
 function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return false;
+  if (value === null) return true;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return true;
   if (Array.isArray(value)) return value.every(isJsonValue);
   if (typeof value === "object") {
@@ -141,8 +141,12 @@ router.patch("/:id", async (req, res) => {
       ...(typeof payload.name !== "undefined" ? { name: payload.name } : {}),
       ...(typeof payload.description !== "undefined" ? { description: payload.description } : {}),
       ...(typeof payload.visibility !== "undefined" ? { visibility: payload.visibility } : {}),
-      ...(typeof payload.contentJson !== "undefined" ? { contentJson: payload.contentJson } : {}),
-      ...(typeof payload.thumbnailJson !== "undefined" ? { thumbnailJson: payload.thumbnailJson } : {}),
+      ...(typeof payload.contentJson !== "undefined"
+        ? { contentJson: payload.contentJson as Prisma.InputJsonValue }
+        : {}),
+      ...(typeof payload.thumbnailJson !== "undefined"
+        ? { thumbnailJson: payload.thumbnailJson as Prisma.InputJsonValue }
+        : {}),
     },
     include: {
       createdBy: {
